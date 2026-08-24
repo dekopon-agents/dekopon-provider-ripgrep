@@ -5,9 +5,13 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 ci="$root/.github/workflows/ci.yml"
 release="$root/.github/workflows/release.yml"
-[[ -f "$ci" && -f "$release" ]] || { echo "error: CI and release workflows are required" >&2; exit 1; }
+recovery="$root/.github/workflows/recover-v0.1.0.yml"
+[[ -f "$ci" && -f "$release" && -f "$recovery" ]] || {
+  echo "error: CI, release, and v0.1.0 recovery workflows are required" >&2
+  exit 1
+}
 
-python3 - "$ci" "$release" <<'PY'
+python3 - "$ci" "$release" "$recovery" <<'PY'
 import pathlib
 import re
 import sys
@@ -51,10 +55,40 @@ if grep -Eq 'ghcr[.]io/dekopon-agents/provider-ripgrep:(latest|staging|tmp|temp)
   echo "error: release workflow names a mutable or secondary provider package/tag" >&2
   exit 1
 fi
-if grep -Eq 'CARGO_TARGET_DIR|cargo clean' "$ci" "$release"; then
+if grep -Eq 'CARGO_TARGET_DIR|cargo clean' "$ci" "$release" "$recovery"; then
   echo "error: workflow overrides Cargo target policy or cleans shared build state" >&2
   exit 1
 fi
+
+for required in \
+  'workflow_dispatch:' \
+  'actions: read' \
+  'attestations: read' \
+  'contents: write' \
+  'id-token: write' \
+  'packages: write' \
+  'SOURCE_SHA: "8bf0ba18f9240d5924d008d09283a5cd7c879f84"' \
+  'SOURCE_RUN_ID: "32733258088"' \
+  'SOURCE_BUILD_JOB_ID: "97450107488"' \
+  'SOURCE_ATTEST_JOB_ID: "97456266494"' \
+  'SOURCE_ARTIFACT_ID: "9522912673"' \
+  'SOURCE_ARTIFACT_ARCHIVE_DIGEST: "sha256:048a291a23288c083790aa1881119a70d4d4efb53b95b7d181c979a86cae2d23"' \
+  'run-id: "32733258088"' \
+  '--source-digest "$SOURCE_SHA"' \
+  '--source-ref "refs/tags/$TAG"' \
+  'gh release create "$TAG" --verify-tag --draft' \
+  'org.opencontainers.image.revision=$SOURCE_SHA' \
+  'dist/ripgrep-provider.wasm:application/wasm' \
+  'provider-ripgrep/versions' \
+  'This PATCH is the recovery transaction' \
+  'post-finalization anonymous read-only verification' \
+  'needs.finalize.result != '\''success'\''' \
+  'owned manifest is missing, shared, or has another tag/version'; do
+  grep -Fq -- "$required" "$recovery" || {
+    echo "error: recovery workflow omits required interlock: $required" >&2
+    exit 1
+  }
+done
 
 python3 - "$release" <<'PY'
 import pathlib
@@ -73,6 +107,53 @@ if text.count('(MIT OR Apache-2.0) AND BSD-3-Clause') < 3:
     raise SystemExit('error: BSD-inclusive binary license expression is not verified end-to-end')
 if text.count('embedded:dekopon.third-party-notices') < 2:
     raise SystemExit('error: embedded-notice annotation is not verified end-to-end')
+PY
+
+python3 - "$recovery" <<'PY'
+import pathlib
+import re
+import sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+preflight = text.index("  preflight:")
+draft = text.index("  draft:")
+publish = text.index("  publish:")
+finalize = text.index("  finalize:")
+final_patch = text.index("# This PATCH is the recovery transaction's final mutation.")
+post = text.index("  verify_final:")
+cleanup = text.index("  cleanup_failed_recovery:")
+if not preflight < draft < publish < finalize < final_patch < post < cleanup:
+    raise SystemExit("error: recovery preflight/mutation/finalization/cleanup ordering drifted")
+if text.count("permissions:") != 1:
+    raise SystemExit("error: recovery permissions must be explicit only once")
+permissions = """permissions:
+  actions: read
+  attestations: read
+  contents: write
+  id-token: write
+  packages: write
+"""
+if permissions not in text:
+    raise SystemExit("error: recovery permissions drifted")
+if text.count('gh release create "$TAG"') != 1:
+    raise SystemExit("error: recovery draft creation cardinality drifted")
+if text.count('"$RUNNER_TEMP/oras-bin" push "$ref"') != 1:
+    raise SystemExit("error: recovery OCI push cardinality drifted")
+if text.count("dist/ripgrep-provider.wasm:application/wasm") != 1:
+    raise SystemExit("error: recovery OCI layer cardinality drifted")
+if "actions/upload-artifact" in text:
+    raise SystemExit("error: recovery must not substitute or re-upload source-run bytes")
+if re.search(r"cargo (?:build|test|check)|prepare-release-assets|reproducible-build", text):
+    raise SystemExit("error: recovery must not rebuild provider bytes")
+if "staging" in text.lower() or re.search(r":(?:tmp|temp)(?:[\"'@\s]|$)", text.lower()):
+    raise SystemExit("error: recovery names a forbidden secondary tag")
+post_text = text[post:cleanup]
+for mutation in ("--method PATCH", "--method DELETE", "gh release create", ' push "$ref"'):
+    if mutation in post_text:
+        raise SystemExit(f"error: post-finalization verification can mutate via {mutation}")
+if text.count("run-id: \"32733258088\"") < 2:
+    raise SystemExit("error: recovery must repeatedly download by fixed source run ID")
+if text.count("sha256:$COMPONENT_SHA256") < 4:
+    raise SystemExit("error: component digest is not verified and documented end-to-end")
 PY
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/ripgrep-oci-verifier.XXXXXX")
