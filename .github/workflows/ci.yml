@@ -50,7 +50,7 @@ jobs:
           cargo +"$PROVIDER_RUST_TOOLCHAIN" install cargo-deny \
             --version "$CARGO_DENY_VERSION" --locked
           sudo apt-get update
-          sudo apt-get install --yes shellcheck ruby
+          sudo apt-get install --yes ripgrep shellcheck ruby
           archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           curl --fail --silent --show-error --location \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
