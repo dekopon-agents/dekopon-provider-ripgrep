@@ -16,6 +16,7 @@ wasm-tools validate "$core"
 wasm-tools validate "$component"
 "$root/scripts/assert-zero-core-imports.sh" "$core"
 "$root/scripts/assert-zero-core-imports.sh" "$component"
+"$root/scripts/embed-license-bundle.py" verify "$component" "$root"
 check_sha256 "${component}.sha256"
 
 size=$(wc -c <"$component" | tr -d ' ')

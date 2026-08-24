@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io};
 
-use dekopon_provider_sdk::{ComponentResponse, ProviderError};
+use dekopon_provider_sdk::ProviderError;
 use grep_matcher::{LineTerminator, Matcher};
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
 use grep_searcher::{
@@ -10,7 +10,7 @@ use grep_searcher::{
 
 use crate::{
     error,
-    input::{CaseMode, MAX_DOCUMENT_TEXT_BYTES, SearchInput, SearchMode},
+    input::{CaseMode, Context, MAX_DOCUMENT_TEXT_BYTES, SearchInput, SearchMode},
     output::{
         MAX_SUBMATCHES_PER_RESULT, MAX_SUCCESS_ENVELOPE_BYTES, ResultKind, SearchOutput,
         SearchResult, Submatch, ordered_reasons, success_envelope_len,
@@ -24,20 +24,79 @@ const REGEX_NEST_LIMIT: u32 = 64;
 #[derive(Debug)]
 struct Candidate {
     document_index: usize,
-    record: SearchResult,
+    kind: ResultKind,
+    byte_start: usize,
+    byte_end: usize,
+    line_start: usize,
+    line_end: usize,
 }
 
 impl Candidate {
     fn selected(&self) -> bool {
-        self.record.kind == ResultKind::Match
+        self.kind == ResultKind::Match
+    }
+
+    fn into_result<'a>(
+        self,
+        input: &'a SearchInput,
+        matcher: &RegexMatcher,
+        multiline_with_matcher: bool,
+    ) -> Result<SearchResult<'a>, ProviderError> {
+        let document = input
+            .documents
+            .get(self.document_index)
+            .ok_or_else(error::search_failed)?;
+        let text = document
+            .text
+            .get(self.byte_start..self.byte_end)
+            .ok_or_else(error::search_failed)?;
+        let (submatches, submatches_truncated) = if self.selected() && !input.invert {
+            collect_submatches(
+                document.text.as_bytes(),
+                self.byte_start,
+                self.byte_end,
+                matcher,
+                multiline_with_matcher,
+            )?
+        } else {
+            (Vec::new(), false)
+        };
+
+        Ok(SearchResult {
+            kind: self.kind,
+            path: &document.path,
+            text,
+            byte_start: self.byte_start,
+            byte_end: self.byte_end,
+            line_start: self.line_start,
+            line_end: self.line_end,
+            submatches,
+            submatches_truncated,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Selection {
+    byte_start: usize,
+    byte_end: usize,
+    line_start: usize,
+    line_end: usize,
+}
+
+impl From<&Candidate> for Selection {
+    fn from(candidate: &Candidate) -> Self {
+        Self {
+            byte_start: candidate.byte_start,
+            byte_end: candidate.byte_end,
+            line_start: candidate.line_start,
+            line_end: candidate.line_end,
+        }
     }
 }
 
 struct CollectSink<'a> {
-    matcher: &'a RegexMatcher,
     document_index: usize,
-    path: &'a str,
-    invert: bool,
     max_results: usize,
     selected_seen: &'a mut usize,
     max_results_probed: &'a mut bool,
@@ -47,7 +106,7 @@ struct CollectSink<'a> {
 impl Sink for CollectSink<'_> {
     type Error = io::Error;
 
-    fn matched(&mut self, searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
+    fn matched(&mut self, _searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
         *self.selected_seen += 1;
         if *self.selected_seen > self.max_results {
             *self.max_results_probed = true;
@@ -65,27 +124,14 @@ impl Sink for CollectSink<'_> {
         )
         .map_err(|_| io::Error::other("match line overflow"))?;
         let line_end = line_end(line_start, mat.bytes())?;
-        let text = String::from_utf8(mat.bytes().to_vec())
-            .map_err(|_| io::Error::other("searcher changed UTF-8 input"))?;
-        let (submatches, submatches_truncated) = if self.invert {
-            (Vec::new(), false)
-        } else {
-            collect_submatches(searcher, self.matcher, mat)?
-        };
 
         self.candidates.push(Candidate {
             document_index: self.document_index,
-            record: SearchResult {
-                kind: ResultKind::Match,
-                path: self.path.to_owned(),
-                text,
-                byte_start,
-                byte_end,
-                line_start,
-                line_end,
-                submatches,
-                submatches_truncated,
-            },
+            kind: ResultKind::Match,
+            byte_start,
+            byte_end,
+            line_start,
+            line_end,
         });
         Ok(true)
     }
@@ -113,28 +159,21 @@ impl Sink for CollectSink<'_> {
                 .ok_or_else(|| io::Error::other("missing context line number"))?,
         )
         .map_err(|_| io::Error::other("context line overflow"))?;
-        let text = String::from_utf8(context.bytes().to_vec())
-            .map_err(|_| io::Error::other("searcher changed UTF-8 input"))?;
         self.candidates.push(Candidate {
             document_index: self.document_index,
-            record: SearchResult {
-                kind,
-                path: self.path.to_owned(),
-                text,
-                byte_start,
-                byte_end,
-                line_start: line,
-                line_end: line,
-                submatches: Vec::new(),
-                submatches_truncated: false,
-            },
+            kind,
+            byte_start,
+            byte_end,
+            line_start: line,
+            line_end: line,
         });
         Ok(true)
     }
 }
 
-pub(crate) fn run(input: &SearchInput) -> Result<SearchOutput, ProviderError> {
+pub(crate) fn run<'a>(input: &'a SearchInput) -> Result<SearchOutput<'a>, ProviderError> {
     let matcher = build_matcher(input)?;
+    let multiline_with_matcher = build_searcher(input).multi_line_with_matcher(&matcher);
     let mut candidates = Vec::new();
     let mut selected_seen = 0usize;
     let mut max_results_probed = false;
@@ -142,10 +181,7 @@ pub(crate) fn run(input: &SearchInput) -> Result<SearchOutput, ProviderError> {
     for (document_index, document) in input.documents.iter().enumerate() {
         let mut searcher = build_searcher(input);
         let mut sink = CollectSink {
-            matcher: &matcher,
             document_index,
-            path: &document.path,
-            invert: input.invert,
             max_results: input.max_results,
             selected_seen: &mut selected_seen,
             max_results_probed: &mut max_results_probed,
@@ -159,17 +195,13 @@ pub(crate) fn run(input: &SearchInput) -> Result<SearchOutput, ProviderError> {
         }
     }
 
-    let candidates = normalize_context(input, candidates);
-    let output = apply_output_limit(candidates, max_results_probed)?;
-    let wire_len = serde_json::to_vec(&ComponentResponse::Succeeded {
-        output: serde_json::to_value(&output).map_err(|_| error::search_failed())?,
-    })
-    .map_err(|_| error::search_failed())?
-    .len();
-    if wire_len > MAX_SUCCESS_ENVELOPE_BYTES {
-        return Err(error::search_failed());
-    }
-    Ok(output)
+    apply_output_limit(
+        input,
+        &matcher,
+        multiline_with_matcher,
+        candidates,
+        max_results_probed,
+    )
 }
 
 fn build_matcher(input: &SearchInput) -> Result<RegexMatcher, ProviderError> {
@@ -229,36 +261,35 @@ fn line_end(line_start: usize, bytes: &[u8]) -> io::Result<usize> {
 }
 
 fn collect_submatches(
-    searcher: &Searcher,
+    document: &[u8],
+    byte_start: usize,
+    byte_end: usize,
     matcher: &RegexMatcher,
-    mat: &SinkMatch<'_>,
-) -> io::Result<(Vec<Submatch>, bool)> {
-    let buffer = mat.buffer();
-    let range = mat.bytes_range_in_buffer();
-    let base = usize::try_from(mat.absolute_byte_offset())
-        .map_err(|_| io::Error::other("match offset overflow"))?
-        .checked_sub(range.start)
-        .ok_or_else(|| io::Error::other("inconsistent match buffer"))?;
-
-    let effective_end =
-        if !searcher.multi_line_with_matcher(matcher) && buffer[range.clone()].ends_with(b"\n") {
-            range.end - 1
-        } else {
-            buffer.len()
-        };
-    let searchable = &buffer[..effective_end];
-    let final_unterminated_record = range.end == buffer.len() && !mat.bytes().ends_with(b"\n");
+    multiline_with_matcher: bool,
+) -> Result<(Vec<Submatch>, bool), ProviderError> {
+    let selected = document
+        .get(byte_start..byte_end)
+        .ok_or_else(error::search_failed)?;
+    let effective_end = if !multiline_with_matcher && selected.ends_with(b"\n") {
+        byte_end - 1
+    } else {
+        document.len()
+    };
+    let searchable = document
+        .get(..effective_end)
+        .ok_or_else(error::search_failed)?;
+    let final_unterminated_record = byte_end == document.len() && !selected.ends_with(b"\n");
     let mut submatches = Vec::with_capacity(MAX_SUBMATCHES_PER_RESULT);
     let mut truncated = false;
 
     matcher
-        .find_iter_at(searchable, range.start, |found| {
-            if found.start() > range.end
-                || (found.start() == range.end && !(found.is_empty() && final_unterminated_record))
+        .find_iter_at(searchable, byte_start, |found| {
+            if found.start() > byte_end
+                || (found.start() == byte_end && !(found.is_empty() && final_unterminated_record))
             {
                 return false;
             }
-            if found.start() < range.start || found.end() > range.end {
+            if found.start() < byte_start || found.end() > byte_end {
                 return true;
             }
             if submatches.len() == MAX_SUBMATCHES_PER_RESULT {
@@ -266,89 +297,115 @@ fn collect_submatches(
                 return false;
             }
             submatches.push(Submatch {
-                byte_start: base + found.start(),
-                byte_end: base + found.end(),
+                byte_start: found.start(),
+                byte_end: found.end(),
             });
             true
         })
-        .map_err(|error| io::Error::other(error.to_string()))?;
+        .map_err(|_| error::search_failed())?;
 
     if submatches.is_empty() {
-        return Err(io::Error::other(
-            "selected record has no rediscovered match",
-        ));
+        return Err(error::search_failed());
     }
     Ok((submatches, truncated))
 }
 
-fn normalize_context(input: &SearchInput, candidates: Vec<Candidate>) -> Vec<Candidate> {
-    let selected = candidates
-        .iter()
-        .filter(|candidate| candidate.selected())
-        .map(|candidate| (candidate.document_index, candidate.record.clone()))
-        .collect::<Vec<_>>();
-    let mut seen = HashSet::new();
-    let mut normalized = Vec::with_capacity(candidates.len());
-
-    for mut candidate in candidates {
-        if candidate.selected() {
-            normalized.push(candidate);
-            continue;
-        }
-        let key = (
-            candidate.document_index,
-            candidate.record.byte_start,
-            candidate.record.byte_end,
-        );
-        if !seen.insert(key) {
-            continue;
-        }
-        if selected.iter().any(|(document_index, selection)| {
-            *document_index == candidate.document_index
-                && ranges_overlap(selection, &candidate.record)
-        }) {
-            continue;
-        }
-
-        let is_before = selected.iter().any(|(document_index, selection)| {
-            *document_index == candidate.document_index
-                && candidate.record.line_end < selection.line_start
-                && selection.line_start - candidate.record.line_end <= input.context.before
-        });
-        let is_after = selected.iter().any(|(document_index, selection)| {
-            *document_index == candidate.document_index
-                && candidate.record.line_start > selection.line_end
-                && candidate.record.line_start - selection.line_end <= input.context.after
-        });
-        candidate.record.kind = if is_before {
-            ResultKind::ContextBefore
-        } else if is_after {
-            ResultKind::ContextAfter
-        } else {
-            continue;
-        };
-        normalized.push(candidate);
+fn normalize_context_candidate(
+    context: Context,
+    selections: &[Vec<Selection>],
+    seen: &mut HashSet<(usize, usize, usize)>,
+    mut candidate: Candidate,
+) -> Option<Candidate> {
+    if candidate.selected() {
+        return Some(candidate);
     }
 
-    normalized.sort_by_key(|candidate| {
+    let key = (
+        candidate.document_index,
+        candidate.byte_start,
+        candidate.byte_end,
+    );
+    if !seen.insert(key) {
+        return None;
+    }
+    let document_selections = selections.get(candidate.document_index)?;
+
+    // Selected ranges are ordered and non-overlapping. Find the first range whose end is after
+    // this context range's start; only that range can overlap it.
+    let overlap_index =
+        document_selections.partition_point(|selection| selection.byte_end <= candidate.byte_start);
+    if document_selections
+        .get(overlap_index)
+        .is_some_and(|selection| selection.byte_start < candidate.byte_end)
+    {
+        return None;
+    }
+
+    // Context classification uses the nearest later/earlier selected range instead of rescanning
+    // every selected record three times. `context_before` deliberately wins ties.
+    let before_index =
+        document_selections.partition_point(|selection| selection.line_start <= candidate.line_end);
+    let is_before = document_selections
+        .get(before_index)
+        .is_some_and(|selection| selection.line_start - candidate.line_end <= context.before);
+
+    let after_index =
+        document_selections.partition_point(|selection| selection.line_end < candidate.line_start);
+    let is_after = after_index != 0
+        && candidate.line_start - document_selections[after_index - 1].line_end <= context.after;
+
+    candidate.kind = if is_before {
+        ResultKind::ContextBefore
+    } else if is_after {
+        ResultKind::ContextAfter
+    } else {
+        return None;
+    };
+    Some(candidate)
+}
+
+fn apply_output_limit<'a>(
+    input: &'a SearchInput,
+    matcher: &RegexMatcher,
+    multiline_with_matcher: bool,
+    mut candidates: Vec<Candidate>,
+    max_results_probed: bool,
+) -> Result<SearchOutput<'a>, ProviderError> {
+    // Searcher callbacks are ordered, but sorting compact metadata makes that invariant explicit
+    // before indexed normalization and deterministic output accounting.
+    candidates.sort_by_key(|candidate| {
         (
             candidate.document_index,
-            candidate.record.byte_start,
-            candidate.record.kind,
+            candidate.byte_start,
+            candidate.byte_end,
+            candidate.kind,
         )
     });
-    normalized
-}
+    let mut selections = (0..input.documents.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<Vec<Selection>>>();
+    for candidate in &candidates {
+        if candidate.selected() {
+            selections[candidate.document_index].push(Selection::from(candidate));
+        }
+    }
 
-fn ranges_overlap(left: &SearchResult, right: &SearchResult) -> bool {
-    left.byte_start < right.byte_end && right.byte_start < left.byte_end
-}
-
-fn apply_output_limit(
-    candidates: Vec<Candidate>,
-    max_results_probed: bool,
-) -> Result<SearchOutput, ProviderError> {
-    let mut iterator = candidates.into_iter().peekable();
+    let context = input.context;
+    let mut raw_candidates = candidates.into_iter();
+    let mut seen_context = HashSet::new();
+    // Normalize lazily. Output truncation therefore materializes and re-matches at most one
+    // prospective record/chunk beyond the retained prefix, not every excluded candidate.
+    let normalized = std::iter::from_fn(move || {
+        loop {
+            let candidate = raw_candidates.next()?;
+            if let Some(candidate) =
+                normalize_context_candidate(context, &selections, &mut seen_context, candidate)
+            {
+                return Some(candidate);
+            }
+        }
+    });
+    let mut iterator = normalized.peekable();
     let mut included = Vec::new();
     let mut pending_before = Vec::new();
     let mut encoded_results_bytes = 0usize;
@@ -357,17 +414,21 @@ fn apply_output_limit(
     let mut max_output_bytes = false;
 
     while let Some(candidate) = iterator.next() {
-        match candidate.record.kind {
+        match candidate.kind {
             ResultKind::ContextBefore => {
                 pending_before.push(candidate);
             }
             ResultKind::Match => {
-                let mut chunk = std::mem::take(&mut pending_before);
-                chunk.push(candidate);
-                let chunk_bytes = encoded_len(&chunk)?;
+                let mut raw_chunk = std::mem::take(&mut pending_before);
+                raw_chunk.push(candidate);
+                let chunk = raw_chunk
+                    .into_iter()
+                    .map(|candidate| candidate.into_result(input, matcher, multiline_with_matcher))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let chunk_bytes: usize = chunk.iter().map(SearchResult::encoded_json_len).sum();
                 let proposed_selected = selected_count + 1;
                 let proposed_submatches =
-                    max_submatches || chunk.iter().any(|item| item.record.submatches_truncated);
+                    max_submatches || chunk.iter().any(|item| item.submatches_truncated);
                 let reserve_output_reason = iterator.peek().is_some();
                 if !fits(
                     encoded_results_bytes + chunk_bytes,
@@ -383,12 +444,11 @@ fn apply_output_limit(
                 encoded_results_bytes += chunk_bytes;
                 selected_count = proposed_selected;
                 max_submatches = proposed_submatches;
-                included.extend(chunk.into_iter().map(|item| item.record));
+                included.extend(chunk);
             }
             ResultKind::ContextAfter => {
-                let record_bytes = serde_json::to_vec(&candidate.record)
-                    .map_err(|_| error::search_failed())?
-                    .len();
+                let record = candidate.into_result(input, matcher, multiline_with_matcher)?;
+                let record_bytes = record.encoded_json_len();
                 let reserve_output_reason = iterator.peek().is_some();
                 if !fits(
                     encoded_results_bytes + record_bytes,
@@ -402,7 +462,7 @@ fn apply_output_limit(
                     break;
                 }
                 encoded_results_bytes += record_bytes;
-                included.push(candidate.record);
+                included.push(record);
             }
         }
     }
@@ -410,21 +470,11 @@ fn apply_output_limit(
     // A before-context record is committed atomically with the selected record that follows it.
     // Discarding a pending tail therefore cannot produce orphan context.
     let reasons = ordered_reasons(max_results_probed, max_output_bytes, max_submatches);
-    let output = SearchOutput {
+    Ok(SearchOutput {
         results: included,
         selected_count,
         truncated: !reasons.is_empty(),
         truncation_reasons: reasons,
-    };
-    Ok(output)
-}
-
-fn encoded_len(candidates: &[Candidate]) -> Result<usize, ProviderError> {
-    candidates.iter().try_fold(0usize, |total, candidate| {
-        let bytes = serde_json::to_vec(&candidate.record)
-            .map_err(|_| error::search_failed())?
-            .len();
-        total.checked_add(bytes).ok_or_else(error::search_failed)
     })
 }
 

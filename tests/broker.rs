@@ -29,7 +29,7 @@ async fn fake_broker_invokes_concurrently_without_storage_and_enforces_wire_size
     assert_eq!(defaults.max_output_bytes, 1_048_576);
     assert_eq!(defaults.max_timeout.as_secs(), 30);
     let release_limits = BrokerHostLimits {
-        fuel: 10_000_000,
+        fuel: 350_000_000,
         ..defaults
     };
 

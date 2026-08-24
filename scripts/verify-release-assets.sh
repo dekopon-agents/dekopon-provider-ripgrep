@@ -33,6 +33,7 @@ fi
 check_sha256 "$directory/ripgrep-provider.wasm.sha256"
 wasm-tools validate "$directory/ripgrep-provider.wasm"
 "$root/scripts/assert-zero-core-imports.sh" "$directory/ripgrep-provider.wasm"
+"$root/scripts/embed-license-bundle.py" verify "$directory/ripgrep-provider.wasm" "$root"
 size=$(wc -c <"$directory/ripgrep-provider.wasm" | tr -d ' ')
 ((size <= 2000000)) || { echo "error: release component exceeds 2,000,000 bytes" >&2; exit 1; }
 printf 'verified exact two-file release asset set (%s bytes)\n' "$size"

@@ -67,8 +67,10 @@ test -s "$core"
 wasm-tools validate "$core"
 "$root/scripts/assert-zero-core-imports.sh" "$core"
 wasm-tools component new "$core" -o "$component"
+"$root/scripts/embed-license-bundle.py" embed "$component" "$root"
 wasm-tools validate "$component"
 "$root/scripts/assert-zero-core-imports.sh" "$component"
+"$root/scripts/embed-license-bundle.py" verify "$component" "$root"
 
 size=$(wc -c <"$component" | tr -d ' ')
 ((size <= 2000000)) || {

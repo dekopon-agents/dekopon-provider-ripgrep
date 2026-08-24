@@ -304,7 +304,8 @@ jobs:
             --annotation "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --annotation "org.opencontainers.image.version=$VERSION" \
             --annotation "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --annotation "org.opencontainers.image.licenses=MIT OR Apache-2.0" \
+            --annotation "org.opencontainers.image.licenses=(MIT OR Apache-2.0) AND BSD-3-Clause" \
+            --annotation "org.dekopon.distribution.notices=embedded:dekopon.third-party-notices" \
             --annotation "org.dekopon.release.run=$run" \
             --annotation "org.dekopon.release.url=https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION" \
             --annotation "org.dekopon.provider.capability=ripgrep.search" \
@@ -442,8 +443,18 @@ jobs:
           encodings/transcoding, mmap, network, replacement, archives, config files, command words,
           PCRE2, or full rg CLI compatibility. Duplicate JSON object names use serde_json's
           last-value-wins behavior. Host wire limits are separate from decoded provider limits.
-          No latest or temporary tag is published.
+          No latest or temporary tag is published. The binary distribution license expression is
+          **(MIT OR Apache-2.0) AND BSD-3-Clause**.
           EOF
+          "$GITHUB_WORKSPACE/scripts/embed-license-bundle.py" write \
+            "$RUNNER_TEMP/license-bundle.txt" "$GITHUB_WORKSPACE"
+          {
+            printf '\n## Complete distribution license bundle\n\n'
+            cat "$RUNNER_TEMP/license-bundle.txt"
+          } >>"$RUNNER_TEMP/release-notes.md"
+          "$GITHUB_WORKSPACE/scripts/embed-license-bundle.py" verify-text \
+            "$RUNNER_TEMP/release-notes.md" "$GITHUB_WORKSPACE"
+          test "$(wc -c <"$RUNNER_TEMP/release-notes.md")" -le 125000
           jq -n --rawfile body "$RUNNER_TEMP/release-notes.md" '{
             draft: false,
             prerelease: false,
@@ -550,6 +561,10 @@ jobs:
                 "https://github.com/dekopon-agents/dekopon-provider-ripgrep" and
               .annotations["org.opencontainers.image.version"] == "0.1.0" and
               .annotations["org.opencontainers.image.revision"] == $revision and
+              .annotations["org.opencontainers.image.licenses"] ==
+                "(MIT OR Apache-2.0) AND BSD-3-Clause" and
+              .annotations["org.dekopon.distribution.notices"] ==
+                "embedded:dekopon.third-party-notices" and
               (.layers | length) == 1 and .layers[0].mediaType == "application/wasm"
             ' "$RUNNER_TEMP/owned-manifest.json" >/dev/null
 

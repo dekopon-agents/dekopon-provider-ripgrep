@@ -89,7 +89,9 @@ order: `max_results`, `max_output_bytes`, `max_submatches`.
 
 Install `dekopon-run 0.11.1`. When v0.1.0 is published, obtain `ripgrep-provider.wasm` plus
 `ripgrep-provider.wasm.sha256` from the immutable release. The same Wasm bytes will be the sole layer
-at `ghcr.io/dekopon-agents/provider-ripgrep:0.1.0`. No `latest` tag is published.
+at `ghcr.io/dekopon-agents/provider-ripgrep:0.1.0`. No `latest` tag is published. The Wasm embeds
+the complete distribution-license bundle in its `dekopon.third-party-notices` custom section; the
+GitHub release documentation reproduces that byte-exact bundle.
 
 Verify the release checksum, then invoke inline:
 
@@ -100,7 +102,7 @@ $ dekopon-run invoke \
     --max-memory-bytes 67108864 \
     --max-input-bytes 1048576 \
     --max-output-bytes 1048576 \
-    --fuel 10000000 \
+    --fuel 350000000 \
     --timeout-ms 30000 \
     ripgrep.search \
     --input '{"documents":[{"path":"notes/today.md","text":"alpha\nbeta\n"}],"pattern":"alpha"}'
@@ -146,8 +148,16 @@ counts against host wire bytes; decoded UTF-8 counts against provider limits.
 | Serialized invocation JSON | 1,048,576 bytes |
 | Serialized response envelope | 1,048,576 bytes |
 | Linear memory | 64 MiB |
-| Release invocation fuel | 10,000,000 |
+| Release invocation fuel | 350,000,000 |
 | Wall time | 30 seconds |
+
+The fuel ceiling is a Wasmtime instruction-accounting bound, not a duration estimate. It is set to
+350,000,000 because the component-host gate returns the maximum 786,432 decoded text bytes as six
+complete records (about 770 KiB of compact response) under that budget and 64 MiB. Separate
+regressions prove an 818-byte/409-record context request under 10,000,000 fuel and all 1,000 simple
+selected records under 30,000,000 fuel. The larger release ceiling leaves measured headroom for
+SDK JSON materialization near the provider output boundary; the 30-second deadline remains an
+independent bound.
 
 The provider neither re-encodes nor estimates raw input size. `dekopon-run`/the broker serializes the
 semantic input and rejects an invocation over 1 MiB before entering the component. Thus highly
@@ -211,5 +221,7 @@ boundary tests, direct host tests, FakeBroker tests without storage, and resourc
 
 ## License
 
-Project-authored source is available under MIT OR Apache-2.0. See `LICENSE-MIT`, `LICENSE-APACHE`,
-and `THIRD_PARTY_NOTICES.md`.
+Project-authored source is available under MIT OR Apache-2.0. Because the component contains
+WHATWG-derived `encoding_rs` data, its binary distribution expression is
+`(MIT OR Apache-2.0) AND BSD-3-Clause`. See `LICENSE-MIT`, `LICENSE-APACHE`, and
+`THIRD_PARTY_NOTICES.md`; the build and release gates verify the exact embedded notice bundle.

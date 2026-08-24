@@ -27,6 +27,10 @@ for required in \
   'application/vnd.dekopon.provider.v1+wasm' \
   'dist/ripgrep-provider.wasm:application/wasm' \
   'org.dekopon.release.run' \
+  'org.opencontainers.image.licenses=(MIT OR Apache-2.0) AND BSD-3-Clause' \
+  'org.dekopon.distribution.notices=embedded:dekopon.third-party-notices' \
+  'embed-license-bundle.py" write' \
+  'embed-license-bundle.py" verify-text' \
   'manifest_digest' \
   'anonymous-pull' \
   'provider-ripgrep/versions' \
@@ -65,6 +69,59 @@ if text.count('gh release create v0.1.0') != 1:
     raise SystemExit('error: release draft creation cardinality drifted')
 if text.count('dist/ripgrep-provider.wasm:application/wasm') != 1:
     raise SystemExit('error: OCI provider push cardinality drifted')
+if text.count('(MIT OR Apache-2.0) AND BSD-3-Clause') < 3:
+    raise SystemExit('error: BSD-inclusive binary license expression is not verified end-to-end')
+if text.count('embedded:dekopon.third-party-notices') < 2:
+    raise SystemExit('error: embedded-notice annotation is not verified end-to-end')
 PY
 
-printf 'workflow SHA pins, immutable release transaction, and cleanup layout passed\n'
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/ripgrep-oci-verifier.XXXXXX")
+trap 'rm -rf "$temporary"' EXIT
+printf 'component fixture\n' >"$temporary/ripgrep-provider.wasm"
+python3 - "$temporary/manifest.json" "$temporary/ripgrep-provider.wasm" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+component = pathlib.Path(sys.argv[2]).read_bytes()
+manifest = {
+    "schemaVersion": 2,
+    "artifactType": "application/vnd.dekopon.provider.v1+wasm",
+    "config": {"size": 2},
+    "annotations": {
+        "org.opencontainers.image.source": "https://github.com/dekopon-agents/dekopon-provider-ripgrep",
+        "org.opencontainers.image.version": "0.1.0",
+        "org.opencontainers.image.revision": "a" * 40,
+        "org.opencontainers.image.licenses": "(MIT OR Apache-2.0) AND BSD-3-Clause",
+        "org.dekopon.distribution.notices": "embedded:dekopon.third-party-notices",
+        "org.dekopon.release.run": "1:1",
+        "org.dekopon.release.url": "https://github.com/dekopon-agents/dekopon-provider-ripgrep/releases/tag/v0.1.0",
+        "org.dekopon.provider.capability": "ripgrep.search",
+    },
+    "layers": [{
+        "mediaType": "application/wasm",
+        "digest": "sha256:" + hashlib.sha256(component).hexdigest(),
+        "size": len(component),
+        "annotations": {"org.opencontainers.image.title": "ripgrep-provider.wasm"},
+    }],
+}
+pathlib.Path(sys.argv[1]).write_text(json.dumps(manifest), encoding="utf-8")
+PY
+"$root/scripts/verify-oci-manifest.py" "$temporary/manifest.json" \
+  "$temporary/ripgrep-provider.wasm" 1:1 "$(printf 'a%.0s' {1..40})"
+python3 - "$temporary/manifest.json" <<'PY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+manifest = json.loads(path.read_text(encoding="utf-8"))
+manifest["annotations"]["org.opencontainers.image.licenses"] = "MIT OR Apache-2.0"
+path.write_text(json.dumps(manifest), encoding="utf-8")
+PY
+if "$root/scripts/verify-oci-manifest.py" "$temporary/manifest.json" \
+  "$temporary/ripgrep-provider.wasm" 1:1 "$(printf 'a%.0s' {1..40})" >/dev/null 2>&1; then
+  echo 'error: OCI verifier accepted the incomplete binary license expression' >&2
+  exit 1
+fi
+
+printf 'workflow SHA pins, immutable release transaction, notices, OCI verifier, and cleanup layout passed\n'

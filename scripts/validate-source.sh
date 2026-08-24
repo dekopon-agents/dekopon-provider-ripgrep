@@ -26,7 +26,7 @@ test -z "$(git ls-files '*.wasm')"
 git diff --check
 bash -n scripts/*.sh
 shellcheck scripts/*.sh
-python3 -m py_compile scripts/verify-oci-manifest.py
+python3 -m py_compile scripts/*.py
 ruby -e 'require "yaml"; ARGV.each { |path| YAML.safe_load_file(path, aliases: true) }' \
   .github/workflows/*.yml
 if command -v actionlint >/dev/null 2>&1; then
