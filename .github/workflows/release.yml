@@ -242,7 +242,8 @@ jobs:
     needs: [build, draft]
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      # Draft releases are visible to this job only with writable contents access.
+      contents: write
       packages: write
     outputs:
       manifest_digest: ${{ steps.publish.outputs.manifest_digest }}
@@ -299,17 +300,21 @@ jobs:
             exit 1
           fi
           grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' "$RUNNER_TEMP/existing.err"
-          "$RUNNER_TEMP/oras-bin" push "$ref" \
-            --artifact-type application/vnd.dekopon.provider.v1+wasm \
-            --annotation "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-            --annotation "org.opencontainers.image.version=$VERSION" \
-            --annotation "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --annotation "org.opencontainers.image.licenses=(MIT OR Apache-2.0) AND BSD-3-Clause" \
-            --annotation "org.dekopon.distribution.notices=embedded:dekopon.third-party-notices" \
-            --annotation "org.dekopon.release.run=$run" \
-            --annotation "org.dekopon.release.url=https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION" \
-            --annotation "org.dekopon.provider.capability=ripgrep.search" \
-            dist/ripgrep-provider.wasm:application/wasm
+          # Push from dist so the OCI layer title is the asset basename, not a workspace path.
+          (
+            cd dist
+            "$RUNNER_TEMP/oras-bin" push "$ref" \
+              --artifact-type application/vnd.dekopon.provider.v1+wasm \
+              --annotation "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --annotation "org.opencontainers.image.version=$VERSION" \
+              --annotation "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --annotation "org.opencontainers.image.licenses=(MIT OR Apache-2.0) AND BSD-3-Clause" \
+              --annotation "org.dekopon.distribution.notices=embedded:dekopon.third-party-notices" \
+              --annotation "org.dekopon.release.run=$run" \
+              --annotation "org.dekopon.release.url=https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION" \
+              --annotation "org.dekopon.provider.capability=ripgrep.search" \
+              ripgrep-provider.wasm:application/wasm
+          )
           digest=$("$RUNNER_TEMP/oras-bin" manifest fetch --descriptor "$ref" | jq -er .digest)
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "manifest_digest=$digest" >>"$GITHUB_OUTPUT"

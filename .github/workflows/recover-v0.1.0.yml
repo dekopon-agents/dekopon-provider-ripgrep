@@ -1,48 +1,79 @@
-name: Recover immutable v0.1.0 release
+name: Finalize exact residual v0.1.0 release
 
 on:
   workflow_dispatch:
 
 permissions:
-  actions: read
-  attestations: read
-  contents: write
-  id-token: write
-  packages: write
+  contents: read
 
 concurrency:
-  group: recover-release-v0.1.0
+  group: finalize-exact-residual-v0.1.0
   cancel-in-progress: false
 
 env:
   VERSION: "0.1.0"
   TAG: "v0.1.0"
+  CONTROL_BASE_SHA: "8556da5846f25ad6f2a3a5cbe2b190443c9dc86b"
   SOURCE_SHA: "8bf0ba18f9240d5924d008d09283a5cd7c879f84"
   TAG_OBJECT_SHA: "55e3a18f84d26ac2bec86c06320bc5af1b39a77f"
   SOURCE_RUN_ID: "32733258088"
   SOURCE_WORKFLOW_ID: "341240238"
   SOURCE_BUILD_JOB_ID: "97450107488"
   SOURCE_ATTEST_JOB_ID: "97456266494"
+  SOURCE_DRAFT_JOB_ID: "97458186871"
+  SOURCE_GHCR_JOB_ID: "97459261430"
+  SOURCE_CLEANUP_JOB_ID: "97459322540"
+  SOURCE_FINALIZE_JOB_ID: "97459342491"
   SOURCE_ARTIFACT_ID: "9522912673"
   SOURCE_ARTIFACT_NAME: "release-assets"
   SOURCE_ARTIFACT_ARCHIVE_DIGEST: "sha256:048a291a23288c083790aa1881119a70d4d4efb53b95b7d181c979a86cae2d23"
   SOURCE_ARTIFACT_ARCHIVE_SIZE: "644173"
+  PRIOR_RUN_ID: "32740154322"
+  PRIOR_WORKFLOW_ID: "341300048"
+  PRIOR_PREFLIGHT_JOB_ID: "97472417477"
+  PRIOR_DRAFT_JOB_ID: "97473253702"
+  PRIOR_PUBLISH_JOB_ID: "97473312024"
+  PRIOR_CLEANUP_JOB_ID: "97473384617"
+  PRIOR_FINALIZE_JOB_ID: "97473386091"
+  PRIOR_VERIFY_FINAL_JOB_ID: "97473386526"
+  PRIOR_MARKER: "provider-ripgrep-recovery-run:32740154322:1"
+  DRAFT_RELEASE_ID: "375773607"
+  DRAFT_COMPONENT_ASSET_ID: "527740347"
+  DRAFT_CHECKSUM_ASSET_ID: "527740350"
+  PACKAGE_ID: "14621604"
+  PACKAGE_VERSION_ID: "1166057577"
+  MANIFEST_DIGEST: "sha256:6e2e29d13541c8d5e16e4fcf238d429c1f7f7db6db1d7b2e35aec3ff3ee61142"
+  MANIFEST_SIZE: "1159"
+  MANIFEST_CREATED: "2026-08-24T14:43:16Z"
+  COMPONENT_DIGEST: "sha256:27dfe89eafafca7039e9191e3211ce05ebe7e650b309905a294ba937d130aa0b"
   COMPONENT_SHA256: "27dfe89eafafca7039e9191e3211ce05ebe7e650b309905a294ba937d130aa0b"
+  CHECKSUM_DIGEST: "sha256:cdb323c2ec550e1d463d19091d3ca2512ac878e7f02a293195d1297daeccce5c"
   CHECKSUM_SHA256: "cdb323c2ec550e1d463d19091d3ca2512ac878e7f02a293195d1297daeccce5c"
   COMPONENT_SIZE: "1670240"
+  CHECKSUM_SIZE: "88"
   REPOSITORY_ID: "1344962391"
   OWNER_ID: "309572726"
+  DISPATCH_ACTOR_ID: "693059"
+  ACTIONS_BOT_ID: "41898282"
   PROVIDER_RUST_TOOLCHAIN: "1.97.0"
   WASM_TOOLS_VERSION: "1.236.1"
+  DEKOPON_RUN_VERSION: "0.11.1"
   ORAS_VERSION: "1.2.3"
   ORAS_LINUX_AMD64_SHA256: "b4efc97a91f471f323f193ea4b4d63d8ff443ca3aab514151a30751330852827"
   OCI_REPOSITORY: "ghcr.io/dekopon-agents/provider-ripgrep"
 
 jobs:
-  preflight:
-    name: prove fixed source run, artifact, attestations, and empty destinations
+  finalize:
+    name: prove the exact residual transaction and finalize its existing draft
     if: github.repository == 'dekopon-agents/dekopon-provider-ripgrep'
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      attestations: read
+      contents: write
+      packages: read
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Check out the dispatched main control commit without credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -50,14 +81,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           path: control
-      - name: Check out only the immutable source commit for verification scripts
+      - name: Check out only the immutable tagged source without credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: 8bf0ba18f9240d5924d008d09283a5cd7c879f84
           path: source
-      - name: Hard-fail outside the one-commit main recovery context
+      - name: Prove repository, one-commit control context, and annotated tag
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -66,50 +97,71 @@ jobs:
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
           test "$GITHUB_REPOSITORY" = dekopon-agents/dekopon-provider-ripgrep
           test "$GITHUB_REPOSITORY_ID" = "$REPOSITORY_ID"
+          test "$GITHUB_REPOSITORY_OWNER" = dekopon-agents
           test "$GITHUB_REPOSITORY_OWNER_ID" = "$OWNER_ID"
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_REF_NAME" = main
           test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_ACTOR" = xrl
+          test "$GITHUB_ACTOR_ID" = "$DISPATCH_ACTOR_ID"
+          test "$GITHUB_TRIGGERING_ACTOR" = xrl
           test "$GITHUB_WORKFLOW_REF" = \
             "dekopon-agents/dekopon-provider-ripgrep/.github/workflows/recover-v0.1.0.yml@refs/heads/main"
+
           test "$(git -C control rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git -C control rev-parse HEAD^)" = "$SOURCE_SHA"
-          test "$(git -C control rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = 1
-          mapfile -t changed < <(git -C control diff --name-only "$SOURCE_SHA" "$GITHUB_SHA")
-          test "${#changed[@]}" -eq 2
+          test "$(git -C control rev-parse HEAD^)" = "$CONTROL_BASE_SHA"
+          test "$(git -C control rev-list --count "$CONTROL_BASE_SHA..$GITHUB_SHA")" = 1
+          read -r -a parents <<<"$(git -C control rev-list --parents -n 1 "$GITHUB_SHA")"
+          test "${#parents[@]}" -eq 2
+          test "${parents[1]}" = "$CONTROL_BASE_SHA"
+          mapfile -t changed < <(
+            git -C control diff --name-only "$CONTROL_BASE_SHA" "$GITHUB_SHA" | LC_ALL=C sort
+          )
+          test "${#changed[@]}" -eq 3
           test "${changed[0]}" = .github/workflows/recover-v0.1.0.yml
-          test "${changed[1]}" = scripts/validate-workflows.sh
+          test "${changed[1]}" = .github/workflows/release.yml
+          test "${changed[2]}" = scripts/validate-workflows.sh
+          git -C control diff --check "$CONTROL_BASE_SHA" "$GITHUB_SHA"
+          control/scripts/validate-workflows.sh
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git -C source ls-files '*.wasm')"
 
           gh api "repos/$GITHUB_REPOSITORY" >"$RUNNER_TEMP/repository.json"
-          jq -e --argjson repository_id "$REPOSITORY_ID" --argjson owner_id "$OWNER_ID" '
-            .id == $repository_id and
+          jq -e --argjson repository "$REPOSITORY_ID" --argjson owner "$OWNER_ID" '
+            .id == $repository and .node_id == "R_kgDOUCp_Vw" and
+            .name == "dekopon-provider-ripgrep" and
             .full_name == "dekopon-agents/dekopon-provider-ripgrep" and
-            .owner.login == "dekopon-agents" and .owner.id == $owner_id and
-            .owner.type == "Organization" and .default_branch == "main" and
-            .private == false and .visibility == "public"
+            .private == false and .visibility == "public" and .default_branch == "main" and
+            .owner.id == $owner and .owner.node_id == "O_kgDOEnO0dg" and
+            .owner.login == "dekopon-agents" and .owner.type == "Organization"
           ' "$RUNNER_TEMP/repository.json" >/dev/null
+          gh api orgs/dekopon-agents >"$RUNNER_TEMP/organization.json"
+          jq -e --argjson owner "$OWNER_ID" '
+            .id == $owner and .node_id == "O_kgDOEnO0dg" and
+            .login == "dekopon-agents" and .type == "Organization"
+          ' "$RUNNER_TEMP/organization.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" >"$RUNNER_TEMP/main-ref.json"
+          jq -e --arg control "$GITHUB_SHA" '
+            .ref == "refs/heads/main" and .object.type == "commit" and .object.sha == $control
+          ' "$RUNNER_TEMP/main-ref.json" >/dev/null
 
           gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >"$RUNNER_TEMP/tag-ref.json"
-          jq -e --arg tag_object "$TAG_OBJECT_SHA" '
-            .ref == "refs/tags/v0.1.0" and
-            .object.type == "tag" and .object.sha == $tag_object
+          jq -e --arg object "$TAG_OBJECT_SHA" '
+            .ref == "refs/tags/v0.1.0" and .object.type == "tag" and .object.sha == $object
           ' "$RUNNER_TEMP/tag-ref.json" >/dev/null
           gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_OBJECT_SHA" >"$RUNNER_TEMP/tag.json"
-          jq -e --arg tag_object "$TAG_OBJECT_SHA" --arg source "$SOURCE_SHA" '
-            .sha == $tag_object and .tag == "v0.1.0" and
+          jq -e --arg object "$TAG_OBJECT_SHA" --arg source "$SOURCE_SHA" '
+            .sha == $object and .tag == "v0.1.0" and
             .object.type == "commit" and .object.sha == $source and
             .message == "dekopon-provider-ripgrep v0.1.0\n"
           ' "$RUNNER_TEMP/tag.json" >/dev/null
-
           version=$(cargo metadata --locked --no-deps --format-version 1 \
             --manifest-path source/Cargo.toml |
             jq -er '[.packages[] | select(.name == "dekopon-ripgrep-provider") | .version] |
               if length == 1 then .[0] else error("provider package cardinality") end')
           test "$version" = "$VERSION"
           test "$TAG" = "v$version"
-      - name: Hard-fail unless the fixed source run and successful jobs match
+      - name: Prove the exact tagged source run and all source jobs
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -120,49 +172,177 @@ jobs:
           jq -e \
             --argjson run "$SOURCE_RUN_ID" \
             --argjson workflow "$SOURCE_WORKFLOW_ID" \
-            --argjson repository_id "$REPOSITORY_ID" \
+            --argjson repository "$REPOSITORY_ID" \
+            --argjson actor "$DISPATCH_ACTOR_ID" \
             --arg source "$SOURCE_SHA" '
-            .id == $run and .run_attempt == 1 and
-            .workflow_id == $workflow and
+            .id == $run and .run_attempt == 1 and .workflow_id == $workflow and
             .path == ".github/workflows/release.yml" and
             .name == "Immutable v0.1.0 release" and
-            .event == "push" and .status == "completed" and
-            .conclusion == "failure" and .head_branch == "v0.1.0" and
-            .head_sha == $source and .head_commit.id == $source and
-            .repository.id == $repository_id and
+            .event == "push" and .status == "completed" and .conclusion == "failure" and
+            .head_branch == "v0.1.0" and .head_sha == $source and .head_commit.id == $source and
+            .actor.id == $actor and .actor.login == "xrl" and
+            .triggering_actor.id == $actor and .triggering_actor.login == "xrl" and
+            .repository.id == $repository and
             .repository.full_name == "dekopon-agents/dekopon-provider-ripgrep" and
-            .head_repository.id == $repository_id and
+            .head_repository.id == $repository and
             .head_repository.full_name == "dekopon-agents/dekopon-provider-ripgrep"
           ' "$RUNNER_TEMP/source-run.json" >/dev/null
 
-          verify_job() {
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" \
+            >"$RUNNER_TEMP/source-jobs.json"
+          jq -e \
+            --argjson build "$SOURCE_BUILD_JOB_ID" \
+            --argjson attest "$SOURCE_ATTEST_JOB_ID" \
+            --argjson draft "$SOURCE_DRAFT_JOB_ID" \
+            --argjson ghcr "$SOURCE_GHCR_JOB_ID" \
+            --argjson cleanup "$SOURCE_CLEANUP_JOB_ID" \
+            --argjson finalize "$SOURCE_FINALIZE_JOB_ID" '
+            .total_count == 6 and (.jobs | length) == 6 and
+            ([.jobs[] | {id, name, status, conclusion}] | sort_by(.id)) == ([
+              {id:$build, name:"verify immutable source and exact component",
+                status:"completed", conclusion:"success"},
+              {id:$attest, name:"attest component and checksum",
+                status:"completed", conclusion:"success"},
+              {id:$draft, name:"create and verify run-owned exact draft",
+                status:"completed", conclusion:"success"},
+              {id:$ghcr, name:"publish direct-final one-layer GHCR artifact and verify anonymously",
+                status:"completed", conclusion:"failure"},
+              {id:$cleanup, name:"remove only this failed run\u0027s proven draft and sole final manifest",
+                status:"completed", conclusion:"success"},
+              {id:$finalize, name:"verify public bytes and finalize release as the last mutation",
+                status:"completed", conclusion:"skipped"}
+            ] | sort_by(.id))
+          ' "$RUNNER_TEMP/source-jobs.json" >/dev/null
+
+          verify_source_job() {
             local id=$1 name=$2 output=$3
             gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id" >"$output"
-            jq -e \
-              --argjson id "$id" \
-              --argjson run "$SOURCE_RUN_ID" \
-              --arg source "$SOURCE_SHA" \
-              --arg name "$name" '
+            jq -e --argjson id "$id" --argjson run "$SOURCE_RUN_ID" \
+              --arg source "$SOURCE_SHA" --arg name "$name" '
               .id == $id and .run_id == $run and .run_attempt == 1 and
               .head_sha == $source and .workflow_name == "Immutable v0.1.0 release" and
               .name == $name and .status == "completed" and .conclusion == "success" and
               .runner_group_name == "GitHub Actions" and .labels == ["ubuntu-24.04"]
             ' "$output" >/dev/null
           }
-          verify_job "$SOURCE_BUILD_JOB_ID" \
-            "verify immutable source and exact component" "$RUNNER_TEMP/build-job.json"
-          verify_job "$SOURCE_ATTEST_JOB_ID" \
-            "attest component and checksum" "$RUNNER_TEMP/attest-job.json"
-
+          verify_source_job "$SOURCE_BUILD_JOB_ID" \
+            "verify immutable source and exact component" "$RUNNER_TEMP/source-build-job.json"
+          verify_source_job "$SOURCE_ATTEST_JOB_ID" \
+            "attest component and checksum" "$RUNNER_TEMP/source-attest-job.json"
           jq -e '
             ([.steps[] | select(.name == "Upload exact two-file release candidate" and
               .status == "completed" and .conclusion == "success")] | length) == 1
-          ' "$RUNNER_TEMP/build-job.json" >/dev/null
+          ' "$RUNNER_TEMP/source-build-job.json" >/dev/null
           jq -e '
             ([.steps[] | select(.name == "Attest both immutable release files" and
               .status == "completed" and .conclusion == "success")] | length) == 1
-          ' "$RUNNER_TEMP/attest-job.json" >/dev/null
-      - name: Hard-fail unless the retained artifact provenance is exact
+          ' "$RUNNER_TEMP/source-attest-job.json" >/dev/null
+      - name: Prove the exact failed recovery run and residual-producing jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PRIOR_RUN_ID" \
+            >"$RUNNER_TEMP/prior-run.json"
+          jq -e \
+            --argjson run "$PRIOR_RUN_ID" \
+            --argjson workflow "$PRIOR_WORKFLOW_ID" \
+            --argjson repository "$REPOSITORY_ID" \
+            --argjson actor "$DISPATCH_ACTOR_ID" \
+            --arg control "$CONTROL_BASE_SHA" '
+            .id == $run and .run_attempt == 1 and .workflow_id == $workflow and
+            .path == ".github/workflows/recover-v0.1.0.yml" and
+            .name == "Recover immutable v0.1.0 release" and
+            .event == "workflow_dispatch" and .status == "completed" and
+            .conclusion == "failure" and .head_branch == "main" and .head_sha == $control and
+            .actor.id == $actor and .actor.login == "xrl" and
+            .triggering_actor.id == $actor and .triggering_actor.login == "xrl" and
+            .repository.id == $repository and
+            .repository.full_name == "dekopon-agents/dekopon-provider-ripgrep"
+          ' "$RUNNER_TEMP/prior-run.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PRIOR_RUN_ID/jobs?per_page=100" \
+            >"$RUNNER_TEMP/prior-jobs.json"
+          jq -e \
+            --argjson preflight "$PRIOR_PREFLIGHT_JOB_ID" \
+            --argjson draft "$PRIOR_DRAFT_JOB_ID" \
+            --argjson publish "$PRIOR_PUBLISH_JOB_ID" \
+            --argjson cleanup "$PRIOR_CLEANUP_JOB_ID" \
+            --argjson finalize "$PRIOR_FINALIZE_JOB_ID" \
+            --argjson verify "$PRIOR_VERIFY_FINAL_JOB_ID" '
+            .total_count == 6 and (.jobs | length) == 6 and
+            ([.jobs[] | {id, name, status, conclusion}] | sort_by(.id)) == ([
+              {id:$preflight,
+                name:"prove fixed source run, artifact, attestations, and empty destinations",
+                status:"completed", conclusion:"success"},
+              {id:$draft,
+                name:"create a marker-owned draft from only the retained source artifact",
+                status:"completed", conclusion:"success"},
+              {id:$publish,
+                name:"push only 0.1.0 and verify its one layer anonymously",
+                status:"completed", conclusion:"failure"},
+              {id:$cleanup,
+                name:"delete only this run\u0027s annotation-owned manifest and marker-owned draft",
+                status:"completed", conclusion:"failure"},
+              {id:$finalize,
+                name:"verify draft and public bytes, verify notes, then finalize as last mutation",
+                status:"completed", conclusion:"skipped"},
+              {id:$verify,
+                name:"post-finalization anonymous read-only verification",
+                status:"completed", conclusion:"skipped"}
+            ] | sort_by(.id))
+          ' "$RUNNER_TEMP/prior-jobs.json" >/dev/null
+
+          verify_prior_job() {
+            local id=$1 name=$2 conclusion=$3 output=$4
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id" >"$output"
+            jq -e --argjson id "$id" --argjson run "$PRIOR_RUN_ID" \
+              --arg control "$CONTROL_BASE_SHA" --arg name "$name" \
+              --arg conclusion "$conclusion" '
+              .id == $id and .run_id == $run and .run_attempt == 1 and
+              .head_sha == $control and .workflow_name == "Recover immutable v0.1.0 release" and
+              .name == $name and .status == "completed" and .conclusion == $conclusion and
+              .labels == ["ubuntu-24.04"] and
+              (if $conclusion == "skipped" then
+                 .runner_group_name == null and (.steps | length) == 0
+               else .runner_group_name == "GitHub Actions" end)
+            ' "$output" >/dev/null
+          }
+          verify_prior_job "$PRIOR_PREFLIGHT_JOB_ID" \
+            "prove fixed source run, artifact, attestations, and empty destinations" success \
+            "$RUNNER_TEMP/prior-preflight-job.json"
+          verify_prior_job "$PRIOR_DRAFT_JOB_ID" \
+            "create a marker-owned draft from only the retained source artifact" success \
+            "$RUNNER_TEMP/prior-draft-job.json"
+          verify_prior_job "$PRIOR_PUBLISH_JOB_ID" \
+            "push only 0.1.0 and verify its one layer anonymously" failure \
+            "$RUNNER_TEMP/prior-publish-job.json"
+          verify_prior_job "$PRIOR_CLEANUP_JOB_ID" \
+            "delete only this run's annotation-owned manifest and marker-owned draft" failure \
+            "$RUNNER_TEMP/prior-cleanup-job.json"
+          verify_prior_job "$PRIOR_FINALIZE_JOB_ID" \
+            "verify draft and public bytes, verify notes, then finalize as last mutation" skipped \
+            "$RUNNER_TEMP/prior-finalize-job.json"
+          verify_prior_job "$PRIOR_VERIFY_FINAL_JOB_ID" \
+            "post-finalization anonymous read-only verification" skipped \
+            "$RUNNER_TEMP/prior-verify-job.json"
+
+          jq -e '
+            ([.steps[] | select(.conclusion == "failure") | .name]) ==
+              ["Push exactly one application-wasm layer, make public, and verify anonymously"]
+          ' "$RUNNER_TEMP/prior-publish-job.json" >/dev/null
+          jq -e '
+            ([.steps[] | select(.conclusion == "failure") | .name]) ==
+              ["Preserve unrelated state; delete only exact run-owned effects"]
+          ' "$RUNNER_TEMP/prior-cleanup-job.json" >/dev/null
+          jq -e '
+            ([.steps[] | select(.name == "Create the run-marker-owned draft and attach only source-run bytes" and
+              .conclusion == "success")] | length) == 1 and
+            ([.steps[] | select(.name == "Redownload both draft assets by ID and compare with source-run bytes" and
+              .conclusion == "success")] | length) == 1
+          ' "$RUNNER_TEMP/prior-draft-job.json" >/dev/null
+      - name: Prove the exact retained source artifact metadata
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -174,7 +354,7 @@ jobs:
             --argjson id "$SOURCE_ARTIFACT_ID" \
             --argjson size "$SOURCE_ARTIFACT_ARCHIVE_SIZE" \
             --argjson run "$SOURCE_RUN_ID" \
-            --argjson repository_id "$REPOSITORY_ID" \
+            --argjson repository "$REPOSITORY_ID" \
             --arg name "$SOURCE_ARTIFACT_NAME" \
             --arg digest "$SOURCE_ARTIFACT_ARCHIVE_DIGEST" \
             --arg source "$SOURCE_SHA" '
@@ -182,23 +362,19 @@ jobs:
             .digest == $digest and .expired == false and
             (.expires_at | fromdateiso8601) > now and
             .workflow_run.id == $run and
-            .workflow_run.repository_id == $repository_id and
-            .workflow_run.head_repository_id == $repository_id and
-            .workflow_run.head_branch == "v0.1.0" and
-            .workflow_run.head_sha == $source
+            .workflow_run.repository_id == $repository and
+            .workflow_run.head_repository_id == $repository and
+            .workflow_run.head_branch == "v0.1.0" and .workflow_run.head_sha == $source
           ' "$RUNNER_TEMP/artifact.json" >/dev/null
-
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
             >"$RUNNER_TEMP/artifacts.json"
-          jq -e \
-            --argjson id "$SOURCE_ARTIFACT_ID" \
-            --arg name "$SOURCE_ARTIFACT_NAME" \
+          jq -e --argjson id "$SOURCE_ARTIFACT_ID" --arg name "$SOURCE_ARTIFACT_NAME" \
             --arg digest "$SOURCE_ARTIFACT_ARCHIVE_DIGEST" '
             .total_count == 1 and (.artifacts | length) == 1 and
             .artifacts[0].id == $id and .artifacts[0].name == $name and
             .artifacts[0].digest == $digest and .artifacts[0].expired == false
           ' "$RUNNER_TEMP/artifacts.json" >/dev/null
-      - name: Download the exact named artifact from the fixed source run
+      - name: Download only the exact retained source-run artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-assets
@@ -206,23 +382,44 @@ jobs:
           github-token: ${{ github.token }}
           repository: dekopon-agents/dekopon-provider-ripgrep
           run-id: "32733258088"
-      - name: Install the pinned component validator
+      - name: Install pinned read-only validators and runtime
         shell: bash
         run: |
           set -euo pipefail
+          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" |
+            sha256sum --check --strict -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
+          test "$("$RUNNER_TEMP/oras" version | awk 'NR == 1 {print $2}')" = "$ORAS_VERSION"
+
           rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal
           cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasm-tools \
-            --version "$WASM_TOOLS_VERSION" --locked
-          test "$(wasm-tools --version)" = "wasm-tools $WASM_TOOLS_VERSION"
-      - name: Verify exact files, checksums, component, WIT, and imports
+            --version "$WASM_TOOLS_VERSION" --locked --root "$RUNNER_TEMP/rust-tools"
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install dekopon-run \
+            --version "$DEKOPON_RUN_VERSION" --locked --root "$RUNNER_TEMP/rust-tools"
+          test "$("$RUNNER_TEMP/rust-tools/bin/wasm-tools" --version)" = \
+            "wasm-tools $WASM_TOOLS_VERSION"
+          test "$("$RUNNER_TEMP/rust-tools/bin/dekopon-run" --version)" = \
+            "dekopon-run $DEKOPON_RUN_VERSION"
+          echo "$RUNNER_TEMP/rust-tools/bin" >>"$GITHUB_PATH"
+          mkdir "$RUNNER_TEMP/anonymous-docker"
+          printf '{"auths":{}}\n' >"$RUNNER_TEMP/anonymous-docker/config.json"
+      - name: Verify exact component, checksum, WIT, zero imports, licenses, and behavior
         shell: bash
         run: |
           set -euo pipefail
+          test "$(find dist -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
+          test -z "$(find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
           test "$(sha256sum dist/ripgrep-provider.wasm | awk '{print $1}')" = "$COMPONENT_SHA256"
-          test "$(sha256sum dist/ripgrep-provider.wasm.sha256 | awk '{print $1}')" = "$CHECKSUM_SHA256"
+          test "$(sha256sum dist/ripgrep-provider.wasm.sha256 | awk '{print $1}')" = \
+            "$CHECKSUM_SHA256"
           test "$(wc -c <dist/ripgrep-provider.wasm | tr -d ' ')" = "$COMPONENT_SIZE"
-          printf '%s  ripgrep-provider.wasm\n' "$COMPONENT_SHA256" \
-            | cmp - dist/ripgrep-provider.wasm.sha256
+          test "$(wc -c <dist/ripgrep-provider.wasm.sha256 | tr -d ' ')" = "$CHECKSUM_SIZE"
+          printf '%s  ripgrep-provider.wasm\n' "$COMPONENT_SHA256" |
+            cmp - dist/ripgrep-provider.wasm.sha256
           source/scripts/verify-release-assets.sh "$PWD/dist"
           wasm-tools component wit -j dist/ripgrep-provider.wasm \
             >"$RUNNER_TEMP/component-wit.json"
@@ -233,7 +430,28 @@ jobs:
             echo "error: forbidden component WIT import or export" >&2
             exit 1
           fi
-      - name: Verify both existing provenance attestations against tag and source run
+          source/scripts/assert-zero-core-imports.sh dist/ripgrep-provider.wasm
+          source/scripts/embed-license-bundle.py verify \
+            dist/ripgrep-provider.wasm "$GITHUB_WORKSPACE/source"
+
+          behavior=$(dekopon-run invoke \
+            --provider dist/ripgrep-provider.wasm \
+            --compile-cache "$RUNNER_TEMP/dekopon-run-cache" \
+            --max-memory-bytes 67108864 \
+            --max-input-bytes 1048576 \
+            --max-output-bytes 1048576 \
+            --fuel 350000000 \
+            --timeout-ms 30000 \
+            ripgrep.search \
+            --input '{"documents":[{"path":"release.txt","text":"Alpha\nbeta\nalpha\n"}],"pattern":"alpha","case":"insensitive","max_results":2}')
+          jq -e '
+            .provider == "ripgrep" and .capability == "ripgrep.search" and
+            .output.selected_count == 2 and .output.truncated == false and
+            [.output.results[].path] == ["release.txt", "release.txt"] and
+            [.output.results[].line_start] == [1, 3] and
+            [.output.results[].text] == ["Alpha\n", "alpha\n"]
+          ' <<<"$behavior" >/dev/null
+      - name: Verify both strict source-run provenance attestations
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -263,8 +481,8 @@ jobs:
               --arg digest "$digest" \
               --arg component "$COMPONENT_SHA256" \
               --arg checksum "$CHECKSUM_SHA256" \
-              --arg repository_id "$REPOSITORY_ID" \
-              --arg owner_id "$OWNER_ID" '
+              --arg repository "$REPOSITORY_ID" \
+              --arg owner "$OWNER_ID" '
               (length == 1) and
               (.[0].verificationResult as $result |
                 $result.signature.certificate as $certificate |
@@ -281,13 +499,13 @@ jobs:
                 $certificate.runnerEnvironment == "github-hosted" and
                 $certificate.sourceRepositoryDigest == $source and
                 $certificate.sourceRepositoryRef == "refs/tags/v0.1.0" and
-                $certificate.sourceRepositoryIdentifier == $repository_id and
-                $certificate.sourceRepositoryOwnerIdentifier == $owner_id and
+                $certificate.sourceRepositoryIdentifier == $repository and
+                $certificate.sourceRepositoryOwnerIdentifier == $owner and
                 $certificate.runInvocationURI == $invocation and
                 $certificate.sourceRepositoryVisibilityAtSigning == "public" and
                 $statement._type == "https://in-toto.io/Statement/v1" and
                 $statement.predicateType == "https://slsa.dev/provenance/v1" and
-                ([ $statement.subject[] | {name, sha256: .digest.sha256} ] | sort_by(.name)) == [
+                ([$statement.subject[] | {name, sha256: .digest.sha256}] | sort_by(.name)) == [
                   {"name":"ripgrep-provider.wasm", "sha256":$component},
                   {"name":"ripgrep-provider.wasm.sha256", "sha256":$checksum}
                 ] and
@@ -297,443 +515,213 @@ jobs:
                   "ref":"refs/tags/v0.1.0",
                   "repository":"https://github.com/dekopon-agents/dekopon-provider-ripgrep"
                 } and
-                $statement.predicate.buildDefinition.internalParameters.github.event_name == "push" and
+                $statement.predicate.buildDefinition.internalParameters.github.event_name ==
+                  "push" and
                 $statement.predicate.buildDefinition.internalParameters.github.repository_id ==
-                  $repository_id and
+                  $repository and
                 $statement.predicate.buildDefinition.internalParameters.github.repository_owner_id ==
-                  $owner_id and
+                  $owner and
                 ($statement.predicate.buildDefinition.resolvedDependencies | length) == 1 and
                 $statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit ==
                   $source and
                 $statement.predicate.runDetails.metadata.invocationId == $invocation and
-                (.[0].verificationResult.verifiedTimestamps | length) > 0)
+                ($result.verifiedTimestamps | length) > 0)
             ' "$RUNNER_TEMP/$name.attestation.json" >/dev/null
           done
-      - name: Prove the v0.1.0 release and entire package are absent
+      - name: Verify the exact untouched marker-owned draft and source-identical assets
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -s 'add // []' >"$RUNNER_TEMP/releases.json"
-          jq -e '[.[] | select(.tag_name == "v0.1.0")] | length == 0' \
-            "$RUNNER_TEMP/releases.json" >/dev/null
-          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
-            >"$RUNNER_TEMP/existing-release.json" 2>"$RUNNER_TEMP/release.err"; then
-            echo "error: immutable v0.1.0 release already exists" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|404' "$RUNNER_TEMP/release.err"
-          if gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
-            >"$RUNNER_TEMP/existing-package.json" 2>"$RUNNER_TEMP/package.err"; then
-            echo "error: provider-ripgrep package already exists" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|404' "$RUNNER_TEMP/package.err"
+          expected_body=$'provider-ripgrep-recovery-run:32740154322:1\n\nRecovery transaction awaiting verified public OCI bytes.\n'
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID" \
+            >"$RUNNER_TEMP/residual-draft.json"
+          jq -e \
+            --argjson release "$DRAFT_RELEASE_ID" \
+            --argjson component_asset "$DRAFT_COMPONENT_ASSET_ID" \
+            --argjson checksum_asset "$DRAFT_CHECKSUM_ASSET_ID" \
+            --argjson bot "$ACTIONS_BOT_ID" \
+            --arg component "$COMPONENT_DIGEST" \
+            --arg checksum "$CHECKSUM_DIGEST" \
+            --argjson component_size "$COMPONENT_SIZE" \
+            --argjson checksum_size "$CHECKSUM_SIZE" \
+            --arg body "$expected_body" '
+            .id == $release and .node_id == "RE_kwDOUCp_V84WZdmn" and
+            .tag_name == "v0.1.0" and .target_commitish == "main" and
+            .name == "v0.1.0" and .draft == true and .prerelease == false and
+            .body == $body and .published_at == null and
+            .created_at == "2026-08-24T13:32:09Z" and
+            .updated_at == "2026-08-24T14:43:06Z" and
+            .author.id == $bot and .author.login == "github-actions[bot]" and
+            ([.assets[] | {
+              id, name, label, state, content_type, size, digest,
+              uploader_id: .uploader.id, uploader_login: .uploader.login
+            }] | sort_by(.id)) == ([
+              {id:$component_asset, name:"ripgrep-provider.wasm", label:"",
+                state:"uploaded", content_type:"application/wasm", size:$component_size,
+                digest:$component, uploader_id:$bot, uploader_login:"github-actions[bot]"},
+              {id:$checksum_asset, name:"ripgrep-provider.wasm.sha256", label:"",
+                state:"uploaded", content_type:"application/octet-stream", size:$checksum_size,
+                digest:$checksum, uploader_id:$bot, uploader_login:"github-actions[bot]"}
+            ] | sort_by(.id))
+          ' "$RUNNER_TEMP/residual-draft.json" >/dev/null
 
-  draft:
-    name: create a marker-owned draft from only the retained source artifact
-    needs: preflight
-    runs-on: ubuntu-24.04
-    outputs:
-      release_id: ${{ steps.create.outputs.release_id }}
-      marker: ${{ steps.create.outputs.marker }}
-    env:
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - name: Check out only immutable source verification scripts
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-          ref: 8bf0ba18f9240d5924d008d09283a5cd7c879f84
-          path: source
-      - name: Download the exact named artifact again from the fixed source run
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: release-assets
-          path: dist
-          github-token: ${{ github.token }}
-          repository: dekopon-agents/dekopon-provider-ripgrep
-          run-id: "32733258088"
-      - name: Recheck exact source bytes and empty destinations immediately before mutation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(find dist -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
-          test -z "$(find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
-          test "$(sha256sum dist/ripgrep-provider.wasm | awk '{print $1}')" = "$COMPONENT_SHA256"
-          test "$(sha256sum dist/ripgrep-provider.wasm.sha256 | awk '{print $1}')" = "$CHECKSUM_SHA256"
-          (cd dist && sha256sum --check --strict ripgrep-provider.wasm.sha256)
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -s 'add // []' >"$RUNNER_TEMP/releases.json"
-          jq -e '[.[] | select(.tag_name == "v0.1.0")] | length == 0' \
-            "$RUNNER_TEMP/releases.json" >/dev/null
-          if gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
-            >/dev/null 2>"$RUNNER_TEMP/package.err"; then
-            echo "error: provider-ripgrep package appeared during recovery" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|404' "$RUNNER_TEMP/package.err"
-      - name: Create the run-marker-owned draft and attach only source-run bytes
-        id: create
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          marker="provider-ripgrep-recovery-run:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          printf '%s\n\nRecovery transaction awaiting verified public OCI bytes.\n' "$marker" \
-            >"$RUNNER_TEMP/draft-notes.md"
-          gh release create "$TAG" --verify-tag --draft --title "$TAG" \
-            --notes-file "$RUNNER_TEMP/draft-notes.md" \
-            dist/ripgrep-provider.wasm dist/ripgrep-provider.wasm.sha256
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -s 'add // []' >"$RUNNER_TEMP/releases-after-create.json"
-          release_id=$(jq -er --arg marker "$marker" '
-            [.[] | select(
-              .draft == true and .tag_name == "v0.1.0" and
-              ((.body // "") | startswith($marker))
-            )] |
-            if length == 1 then .[0].id else error("run-owned draft cardinality") end
-          ' "$RUNNER_TEMP/releases-after-create.json")
-          test "$release_id" -gt 0
-          echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
-          echo "marker=$marker" >>"$GITHUB_OUTPUT"
-      - name: Redownload both draft assets by ID and compare with source-run bytes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ steps.create.outputs.release_id }}
-          MARKER: ${{ steps.create.outputs.marker }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" >"$RUNNER_TEMP/draft.json"
-          jq -e --arg marker "$MARKER" '
-            .draft == true and .tag_name == "v0.1.0" and
-            ((.body // "") | startswith($marker)) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
-          ' "$RUNNER_TEMP/draft.json" >/dev/null
+            jq -s 'add // []' >"$RUNNER_TEMP/all-releases.json"
+          jq -e --argjson release "$DRAFT_RELEASE_ID" '
+            [.[] | select(.tag_name == "v0.1.0")] as $matching |
+            ($matching | length) == 1 and $matching[0].id == $release and
+            $matching[0].draft == true and
+            ([.[] | select(.tag_name == "v0.1.0" and .draft == false)] | length) == 0
+          ' "$RUNNER_TEMP/all-releases.json" >/dev/null
+          status=$(env -u GH_TOKEN -u GITHUB_TOKEN curl --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            --output "$RUNNER_TEMP/anonymous-release-before.json" --write-out '%{http_code}' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG")
+          test "$status" = 404
+
           mkdir "$RUNNER_TEMP/draft-assets"
-          for name in ripgrep-provider.wasm ripgrep-provider.wasm.sha256; do
-            asset_id=$(jq -er --arg name "$name" '
-              [.assets[] | select(.name == $name)] |
-              if length == 1 then .[0].id else error("asset cardinality") end
-            ' "$RUNNER_TEMP/draft.json")
-            gh api -H 'Accept: application/octet-stream' \
-              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-              >"$RUNNER_TEMP/draft-assets/$name"
-            cmp "dist/$name" "$RUNNER_TEMP/draft-assets/$name"
-          done
-          test "$(sha256sum "$RUNNER_TEMP/draft-assets/ripgrep-provider.wasm" | awk '{print $1}')" = \
-            "$COMPONENT_SHA256"
-          (cd "$RUNNER_TEMP/draft-assets" && \
-            sha256sum --check --strict ripgrep-provider.wasm.sha256)
-
-  publish:
-    name: push only 0.1.0 and verify its one layer anonymously
-    needs: [preflight, draft]
-    runs-on: ubuntu-24.04
-    outputs:
-      manifest_digest: ${{ steps.publish.outputs.manifest_digest }}
-      component_digest: ${{ steps.publish.outputs.component_digest }}
-    steps:
-      - name: Check out only the immutable source manifest verifier
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-          ref: 8bf0ba18f9240d5924d008d09283a5cd7c879f84
-          path: source
-      - name: Download the exact named artifact again from the fixed source run
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: release-assets
-          path: dist
-          github-token: ${{ github.token }}
-          repository: dekopon-agents/dekopon-provider-ripgrep
-          run-id: "32733258088"
-      - name: Install pinned ORAS from its verified archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location \
-            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
-            --output "$RUNNER_TEMP/$archive"
-          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" |
-            sha256sum --check --strict -
-          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
-          install -m 0755 "$RUNNER_TEMP/oras" "$RUNNER_TEMP/oras-bin"
-          test "$("$RUNNER_TEMP/oras-bin" version | awk 'NR == 1 {print $2}')" = "$ORAS_VERSION"
-      - name: Authenticate only for the exact final tag push
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push exactly one application-wasm layer, make public, and verify anonymously
-        id: publish
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$DRAFT_COMPONENT_ASSET_ID" \
+            >"$RUNNER_TEMP/draft-assets/ripgrep-provider.wasm"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$DRAFT_CHECKSUM_ASSET_ID" \
+            >"$RUNNER_TEMP/draft-assets/ripgrep-provider.wasm.sha256"
+          cmp dist/ripgrep-provider.wasm "$RUNNER_TEMP/draft-assets/ripgrep-provider.wasm"
+          cmp dist/ripgrep-provider.wasm.sha256 \
+            "$RUNNER_TEMP/draft-assets/ripgrep-provider.wasm.sha256"
+          source/scripts/verify-release-assets.sh "$RUNNER_TEMP/draft-assets"
+      - name: Verify exact public package, manifest bytes, path title, and anonymous blob bytes
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          MARKER: ${{ needs.draft.outputs.marker }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$VERSION" = 0.1.0
-          test "$(sha256sum dist/ripgrep-provider.wasm | awk '{print $1}')" = "$COMPONENT_SHA256"
-          (cd dist && sha256sum --check --strict ripgrep-provider.wasm.sha256)
-          run="$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          ref="$OCI_REPOSITORY:$VERSION"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" >"$RUNNER_TEMP/owned-draft.json"
-          jq -e --arg marker "$MARKER" '
-            .draft == true and .tag_name == "v0.1.0" and
-            ((.body // "") | startswith($marker)) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
-          ' "$RUNNER_TEMP/owned-draft.json" >/dev/null
-          if gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
-            >/dev/null 2>"$RUNNER_TEMP/package-before-push.err"; then
-            echo "error: provider-ripgrep package appeared before the only push" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|404' "$RUNNER_TEMP/package-before-push.err"
-          if "$RUNNER_TEMP/oras-bin" manifest fetch --descriptor "$ref" \
-            >"$RUNNER_TEMP/existing.json" 2>"$RUNNER_TEMP/existing.err"; then
-            echo "error: immutable 0.1.0 OCI reference already exists" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404|denied' \
-            "$RUNNER_TEMP/existing.err"
-
-          "$RUNNER_TEMP/oras-bin" push "$ref" \
-            --artifact-type application/vnd.dekopon.provider.v1+wasm \
-            --annotation "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-            --annotation "org.opencontainers.image.version=$VERSION" \
-            --annotation "org.opencontainers.image.revision=$SOURCE_SHA" \
-            --annotation "org.opencontainers.image.licenses=(MIT OR Apache-2.0) AND BSD-3-Clause" \
-            --annotation "org.dekopon.distribution.notices=embedded:dekopon.third-party-notices" \
-            --annotation "org.dekopon.release.run=$run" \
-            --annotation "org.dekopon.release.url=https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" \
-            --annotation "org.dekopon.provider.capability=ripgrep.search" \
-            dist/ripgrep-provider.wasm:application/wasm
-
-          digest=$("$RUNNER_TEMP/oras-bin" manifest fetch --descriptor "$ref" | jq -er .digest)
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "manifest_digest=$digest" >>"$GITHUB_OUTPUT"
-          echo "component_digest=sha256:$COMPONENT_SHA256" >>"$GITHUB_OUTPUT"
-          "$RUNNER_TEMP/oras-bin" manifest fetch "$ref" >"$RUNNER_TEMP/tag-manifest.json"
-          "$RUNNER_TEMP/oras-bin" manifest fetch "$OCI_REPOSITORY@$digest" \
-            >"$RUNNER_TEMP/digest-manifest.json"
-          jq -S . "$RUNNER_TEMP/tag-manifest.json" >"$RUNNER_TEMP/tag-manifest.canonical.json"
-          jq -S . "$RUNNER_TEMP/digest-manifest.json" >"$RUNNER_TEMP/digest-manifest.canonical.json"
-          cmp "$RUNNER_TEMP/tag-manifest.canonical.json" "$RUNNER_TEMP/digest-manifest.canonical.json"
-          source/scripts/verify-oci-manifest.py "$RUNNER_TEMP/tag-manifest.json" \
-            dist/ripgrep-provider.wasm "$run" "$SOURCE_SHA"
-
-          for _ in {1..60}; do
-            visibility=$(gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
-              --jq .visibility 2>/dev/null || true)
-            if [[ "$visibility" == public ]]; then break; fi
-            if [[ "$visibility" == private || "$visibility" == internal ]]; then
-              gh api --method PATCH \
-                /orgs/dekopon-agents/packages/container/provider-ripgrep \
-                -f visibility=public >/dev/null
-            fi
-            sleep 2
-          done
-          test "$(gh api /orgs/dekopon-agents/packages/container/provider-ripgrep --jq .visibility)" = \
-            public
-
-          docker logout ghcr.io
-          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN "$RUNNER_TEMP/oras-bin")
-          tag_digest=$("${anonymous[@]}" manifest fetch --descriptor "$ref" | jq -er .digest)
-          digest_digest=$("${anonymous[@]}" manifest fetch --descriptor \
-            "$OCI_REPOSITORY@$digest" | jq -er .digest)
-          test "$tag_digest" = "$digest"
-          test "$digest_digest" = "$digest"
-          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/anonymous-tag-manifest.json"
-          "${anonymous[@]}" manifest fetch "$OCI_REPOSITORY@$digest" \
-            >"$RUNNER_TEMP/anonymous-digest-manifest.json"
-          jq -S . "$RUNNER_TEMP/anonymous-tag-manifest.json" >"$RUNNER_TEMP/anonymous-tag.canonical.json"
-          jq -S . "$RUNNER_TEMP/anonymous-digest-manifest.json" \
-            >"$RUNNER_TEMP/anonymous-digest.canonical.json"
-          cmp "$RUNNER_TEMP/anonymous-tag.canonical.json" "$RUNNER_TEMP/anonymous-digest.canonical.json"
-          source/scripts/verify-oci-manifest.py "$RUNNER_TEMP/anonymous-tag-manifest.json" \
-            dist/ripgrep-provider.wasm "$run" "$SOURCE_SHA"
-          jq -e --arg digest "sha256:$COMPONENT_SHA256" --argjson size "$COMPONENT_SIZE" '
-            (.layers | length) == 1 and
-            .layers[0].mediaType == "application/wasm" and
-            .layers[0].digest == $digest and .layers[0].size == $size and
-            .layers[0].annotations["org.opencontainers.image.title"] ==
-              "ripgrep-provider.wasm"
-          ' "$RUNNER_TEMP/anonymous-tag-manifest.json" >/dev/null
-
-          mkdir "$RUNNER_TEMP/anonymous-tag-pull" "$RUNNER_TEMP/anonymous-digest-pull"
-          "${anonymous[@]}" pull "$ref" --output "$RUNNER_TEMP/anonymous-tag-pull"
-          "${anonymous[@]}" pull "$OCI_REPOSITORY@$digest" \
-            --output "$RUNNER_TEMP/anonymous-digest-pull"
-          for directory in anonymous-tag-pull anonymous-digest-pull; do
-            test "$(find "$RUNNER_TEMP/$directory" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 1
-            test -z "$(find "$RUNNER_TEMP/$directory" -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
-            cmp dist/ripgrep-provider.wasm "$RUNNER_TEMP/$directory/ripgrep-provider.wasm"
-          done
-          if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:latest" \
-            >/dev/null 2>"$RUNNER_TEMP/latest.err"; then
-            echo "error: forbidden latest tag exists" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' "$RUNNER_TEMP/latest.err"
-
-          for _ in {1..30}; do
-            gh api --paginate \
-              /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-              >"$RUNNER_TEMP/versions.jsons"
-            if jq -se --arg digest "$digest" '
-              [.[][]] as $versions |
-              ($versions | length) == 1 and
-              $versions[0].name == $digest and
-              (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-            ' "$RUNNER_TEMP/versions.jsons" >/dev/null; then
-              break
-            fi
-            sleep 2
-          done
-          jq -se --arg digest "$digest" '
-            [.[][]] as $versions |
-            ($versions | length) == 1 and
-            $versions[0].name == $digest and
-            (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-          ' "$RUNNER_TEMP/versions.jsons" >/dev/null
-
-  finalize:
-    name: verify draft and public bytes, verify notes, then finalize as last mutation
-    needs: [preflight, draft, publish]
-    runs-on: ubuntu-24.04
-    env:
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - name: Check out only immutable source verification scripts
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-          ref: 8bf0ba18f9240d5924d008d09283a5cd7c879f84
-          path: source
-      - name: Download the exact named artifact again from the fixed source run
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: release-assets
-          path: dist
-          github-token: ${{ github.token }}
-          repository: dekopon-agents/dekopon-provider-ripgrep
-          run-id: "32733258088"
-      - name: Install pinned ORAS and component validator
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location \
-            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
-            --output "$RUNNER_TEMP/$archive"
-          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" |
-            sha256sum --check --strict -
-          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
-          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal
-          cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasm-tools \
-            --version "$WASM_TOOLS_VERSION" --locked
-      - name: Recheck draft assets and anonymous OCI bytes before release-note mutation
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          MARKER: ${{ needs.draft.outputs.marker }}
-          MANIFEST_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$MANIFEST_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "${{ needs.publish.outputs.component_digest }}" = "sha256:$COMPONENT_SHA256"
-          run="$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          ref="$OCI_REPOSITORY:$VERSION"
-          source/scripts/verify-release-assets.sh "$PWD/dist"
-
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" >"$RUNNER_TEMP/final-draft.json"
-          jq -e --arg marker "$MARKER" '
-            .draft == true and .tag_name == "v0.1.0" and
-            ((.body // "") | startswith($marker)) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
-          ' "$RUNNER_TEMP/final-draft.json" >/dev/null
-          mkdir "$RUNNER_TEMP/final-draft-assets"
-          for name in ripgrep-provider.wasm ripgrep-provider.wasm.sha256; do
-            asset_id=$(jq -er --arg name "$name" '
-              [.assets[] | select(.name == $name)] |
-              if length == 1 then .[0].id else error("asset cardinality") end
-            ' "$RUNNER_TEMP/final-draft.json")
-            gh api -H 'Accept: application/octet-stream' \
-              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-              >"$RUNNER_TEMP/final-draft-assets/$name"
-            cmp "dist/$name" "$RUNNER_TEMP/final-draft-assets/$name"
-          done
-          source/scripts/verify-release-assets.sh "$RUNNER_TEMP/final-draft-assets"
-
-          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN "$RUNNER_TEMP/oras")
-          test "$("${anonymous[@]}" manifest fetch --descriptor "$ref" | jq -er .digest)" = \
-            "$MANIFEST_DIGEST"
-          test "$("${anonymous[@]}" manifest fetch --descriptor \
-            "$OCI_REPOSITORY@$MANIFEST_DIGEST" | jq -er .digest)" = "$MANIFEST_DIGEST"
-          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/final-manifest.json"
-          source/scripts/verify-oci-manifest.py "$RUNNER_TEMP/final-manifest.json" \
-            dist/ripgrep-provider.wasm "$run" "$SOURCE_SHA"
-          mkdir "$RUNNER_TEMP/final-pull"
-          "${anonymous[@]}" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
-            --output "$RUNNER_TEMP/final-pull"
-          test "$(find "$RUNNER_TEMP/final-pull" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 1
-          cmp dist/ripgrep-provider.wasm "$RUNNER_TEMP/final-pull/ripgrep-provider.wasm"
-          if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:latest" \
-            >/dev/null 2>"$RUNNER_TEMP/final-latest.err"; then
-            echo "error: forbidden latest tag exists before finalization" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
-            "$RUNNER_TEMP/final-latest.err"
+          gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
+            >"$RUNNER_TEMP/package.json"
+          jq -e --argjson package "$PACKAGE_ID" --argjson repository "$REPOSITORY_ID" '
+            .id == $package and .name == "provider-ripgrep" and
+            .package_type == "container" and .visibility == "public" and
+            .repository.id == $repository and
+            .repository.full_name == "dekopon-agents/dekopon-provider-ripgrep"
+          ' "$RUNNER_TEMP/package.json" >/dev/null
           gh api --paginate \
             /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-            >"$RUNNER_TEMP/final-versions.jsons"
-          jq -se --arg digest "$MANIFEST_DIGEST" '
+            >"$RUNNER_TEMP/package-versions.jsons"
+          jq -se --argjson version "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
             [.[][]] as $versions |
-            ($versions | length) == 1 and
+            ($versions | length) == 1 and $versions[0].id == $version and
             $versions[0].name == $digest and
+            $versions[0].metadata.package_type == "container" and
             (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-          ' "$RUNNER_TEMP/final-versions.jsons" >/dev/null
-      - name: Update and verify digest-bearing release notes while still draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          MARKER: ${{ needs.draft.outputs.marker }}
-          MANIFEST_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
+          ' "$RUNNER_TEMP/package-versions.jsons" >/dev/null
+
+          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN \
+            DOCKER_CONFIG="$RUNNER_TEMP/anonymous-docker" "$RUNNER_TEMP/oras")
+          ref="$OCI_REPOSITORY:$VERSION"
+          "${anonymous[@]}" manifest fetch --descriptor "$ref" \
+            >"$RUNNER_TEMP/tag-descriptor.json"
+          "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
+            >"$RUNNER_TEMP/digest-descriptor.json"
+          for descriptor in tag-descriptor digest-descriptor; do
+            jq -e --arg digest "$MANIFEST_DIGEST" --argjson size "$MANIFEST_SIZE" '
+              .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+              .digest == $digest and .size == $size
+            ' "$RUNNER_TEMP/$descriptor.json" >/dev/null
+          done
+          cmp "$RUNNER_TEMP/tag-descriptor.json" "$RUNNER_TEMP/digest-descriptor.json"
+          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/tag-manifest.json"
+          "${anonymous[@]}" manifest fetch "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
+            >"$RUNNER_TEMP/digest-manifest.json"
+          cmp "$RUNNER_TEMP/tag-manifest.json" "$RUNNER_TEMP/digest-manifest.json"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/tag-manifest.json" | awk '{print $1}')" = \
+            "$MANIFEST_DIGEST"
+          test "$(wc -c <"$RUNNER_TEMP/tag-manifest.json" | tr -d ' ')" = "$MANIFEST_SIZE"
+          # Only this digest-pinned residual gate accepts the historical dist/ title.
+          # The normal release verifier remains basename-strict for every future push.
+          jq -e \
+            --arg source "$SOURCE_SHA" \
+            --arg run "$PRIOR_RUN_ID:1" \
+            --arg created "$MANIFEST_CREATED" \
+            --arg component "$COMPONENT_DIGEST" \
+            --argjson component_size "$COMPONENT_SIZE" '
+            (. | keys | sort) ==
+              ["annotations", "artifactType", "config", "layers", "mediaType", "schemaVersion"] and
+            .schemaVersion == 2 and
+            .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+            .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
+            .config == {
+              "data":"e30=",
+              "digest":"sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "mediaType":"application/vnd.oci.empty.v1+json",
+              "size":2
+            } and
+            .annotations == {
+              "org.dekopon.distribution.notices":"embedded:dekopon.third-party-notices",
+              "org.dekopon.provider.capability":"ripgrep.search",
+              "org.dekopon.release.run":$run,
+              "org.dekopon.release.url":"https://github.com/dekopon-agents/dekopon-provider-ripgrep/releases/tag/v0.1.0",
+              "org.opencontainers.image.created":$created,
+              "org.opencontainers.image.licenses":"(MIT OR Apache-2.0) AND BSD-3-Clause",
+              "org.opencontainers.image.revision":$source,
+              "org.opencontainers.image.source":"https://github.com/dekopon-agents/dekopon-provider-ripgrep",
+              "org.opencontainers.image.version":"0.1.0"
+            } and
+            .layers == [{
+              "annotations":{"org.opencontainers.image.title":"dist/ripgrep-provider.wasm"},
+              "digest":$component,
+              "mediaType":"application/wasm",
+              "size":$component_size
+            }]
+          ' "$RUNNER_TEMP/tag-manifest.json" >/dev/null
+
+          mkdir "$RUNNER_TEMP/tag-pull" "$RUNNER_TEMP/digest-pull"
+          "${anonymous[@]}" pull "$ref" --output "$RUNNER_TEMP/tag-pull"
+          "${anonymous[@]}" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
+            --output "$RUNNER_TEMP/digest-pull"
+          for directory in tag-pull digest-pull; do
+            test "$(find "$RUNNER_TEMP/$directory" -type f | wc -l)" -eq 1
+            test -z "$(find "$RUNNER_TEMP/$directory" ! -type f ! -type d -print -quit)"
+            test -f "$RUNNER_TEMP/$directory/dist/ripgrep-provider.wasm"
+            cmp dist/ripgrep-provider.wasm \
+              "$RUNNER_TEMP/$directory/dist/ripgrep-provider.wasm"
+          done
+          for forbidden in latest staging; do
+            if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:$forbidden" \
+              >"$RUNNER_TEMP/$forbidden.json" 2>"$RUNNER_TEMP/$forbidden.err"; then
+              echo "error: forbidden $forbidden OCI tag exists" >&2
+              exit 1
+            fi
+            grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
+              "$RUNNER_TEMP/$forbidden.err"
+          done
+      - name: Produce and locally verify complete digest-bearing release notes
         shell: bash
         run: |
           set -euo pipefail
           cat >"$RUNNER_TEMP/release-notes.md" <<EOF
-          $MARKER
+          $PRIOR_MARKER
 
           Import-free bounded search over caller-fed UTF-8 virtual documents.
 
-          - OCI manifest: \`$OCI_REPOSITORY@$MANIFEST_DIGEST\` (tag \`0.1.0\`)
-          - Component: \`sha256:$COMPONENT_SHA256\` (\`ripgrep-provider.wasm\`)
-          - Recovered only from \`$SOURCE_ARTIFACT_NAME\` in [source run $SOURCE_RUN_ID](https://github.com/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID); both attached files retain that run's verified build provenance.
+          ## Immutable identities and provenance
 
-          The anonymous OCI layer is byte-identical to \`ripgrep-provider.wasm\`; verify it with the attached SHA-256 file.
+          - Annotated tag: [\`$TAG\`](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG), tag object \`$TAG_OBJECT_SHA\`, targeting source commit \`$SOURCE_SHA\`.
+          - Retained source artifact: \`$SOURCE_ARTIFACT_NAME\` (artifact ID \`$SOURCE_ARTIFACT_ID\`) from [tagged source run $SOURCE_RUN_ID](https://github.com/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID), archive \`$SOURCE_ARTIFACT_ARCHIVE_DIGEST\`. Both attached files retain that run's strict GitHub build-provenance attestation.
+          - OCI manifest: [\`$OCI_REPOSITORY@$MANIFEST_DIGEST\`](https://github.com/orgs/dekopon-agents/packages/container/package/provider-ripgrep) (package version ID \`$PACKAGE_VERSION_ID\`), with the sole tag \`0.1.0\`.
+          - Component: \`$COMPONENT_DIGEST\` (\`ripgrep-provider.wasm\`, $COMPONENT_SIZE bytes).
+          - Checksum asset: \`$CHECKSUM_DIGEST\` (\`ripgrep-provider.wasm.sha256\`).
 
-          Limitations: no filesystem/path discovery, directories, globs, types, ignore files,
+          The OCI manifest was produced by [recovery run $PRIOR_RUN_ID, attempt 1](https://github.com/$GITHUB_REPOSITORY/actions/runs/$PRIOR_RUN_ID) and records capability \`ripgrep.search\`, the source revision, release URL, complete binary license expression, embedded-notices contract, and recovery-run identity. Its sole layer title is \`dist/ripgrep-provider.wasm\`, matching that run's actual relative ORAS argument; the title is content-neutral and the anonymous layer bytes are byte-identical to the attached component. No \`latest\`, \`staging\`, or temporary OCI tag is published.
+
+          ## Scope and limitations
+
+          No filesystem/path discovery, directories, globs, types, ignore files,
           encodings/transcoding, mmap, network, replacement, archives, config files, command words,
           PCRE2, or full rg CLI compatibility. Duplicate JSON object names use serde_json's
           last-value-wins behavior. Host wire limits are separate from decoded provider limits.
-          No latest or temporary tag is published. The binary distribution license expression is
-          **(MIT OR Apache-2.0) AND BSD-3-Clause**.
+          The binary distribution license expression is **(MIT OR Apache-2.0) AND BSD-3-Clause**.
           EOF
           source/scripts/embed-license-bundle.py write \
             "$RUNNER_TEMP/license-bundle.txt" "$GITHUB_WORKSPACE/source"
@@ -744,89 +732,151 @@ jobs:
           source/scripts/embed-license-bundle.py verify-text \
             "$RUNNER_TEMP/release-notes.md" "$GITHUB_WORKSPACE/source"
           test "$(wc -c <"$RUNNER_TEMP/release-notes.md")" -le 125000
-          test "$(grep -Fo -- "$MANIFEST_DIGEST" "$RUNNER_TEMP/release-notes.md" | wc -l)" -eq 1
-          test "$(grep -Fo -- "sha256:$COMPONENT_SHA256" \
-            "$RUNNER_TEMP/release-notes.md" | wc -l)" -eq 1
-
-          jq -n --rawfile body "$RUNNER_TEMP/release-notes.md" '{
-            draft: true,
-            prerelease: false,
-            name: "v0.1.0",
-            body: $body
-          }' >"$RUNNER_TEMP/update-draft.json"
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-            --input "$RUNNER_TEMP/update-draft.json" >"$RUNNER_TEMP/updated-draft.json"
-          jq -e --arg marker "$MARKER" --rawfile body "$RUNNER_TEMP/release-notes.md" '
-            .draft == true and .prerelease == false and .tag_name == "v0.1.0" and
-            .name == "v0.1.0" and .body == $body and (.body | startswith($marker)) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
-          ' "$RUNNER_TEMP/updated-draft.json" >/dev/null
-
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-            >"$RUNNER_TEMP/verified-notes-draft.json"
-          jq -e --arg marker "$MARKER" --arg manifest "$MANIFEST_DIGEST" \
-            --arg component "sha256:$COMPONENT_SHA256" \
-            --rawfile body "$RUNNER_TEMP/release-notes.md" '
-            .draft == true and .tag_name == "v0.1.0" and .body == $body and
-            (.body | startswith($marker)) and
-            ((.body | indices($manifest) | length) == 1) and
-            ((.body | indices($component) | length) == 1)
-          ' "$RUNNER_TEMP/verified-notes-draft.json" >/dev/null
-          source/scripts/embed-license-bundle.py verify-text \
-            <(jq -er .body "$RUNNER_TEMP/verified-notes-draft.json") \
-            "$GITHUB_WORKSPACE/source"
-      - name: Read-only final gate, then finalize the draft as the last mutation
+          test "$(head -n 1 "$RUNNER_TEMP/release-notes.md")" = "$PRIOR_MARKER"
+          for digest in \
+            "$SOURCE_ARTIFACT_ARCHIVE_DIGEST" "$MANIFEST_DIGEST" \
+            "$COMPONENT_DIGEST" "$CHECKSUM_DIGEST"; do
+            test "$(grep -Fo -- "$digest" "$RUNNER_TEMP/release-notes.md" | wc -l)" -eq 1
+          done
+          test "$(grep -Fo -- "$SOURCE_SHA" "$RUNNER_TEMP/release-notes.md" | wc -l)" -eq 1
+          test "$(grep -Fo -- "$TAG_OBJECT_SHA" "$RUNNER_TEMP/release-notes.md" | wc -l)" -eq 1
+      - name: Last read-only interlock, then one complete final PATCH
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          MARKER: ${{ needs.draft.outputs.marker }}
-          MANIFEST_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
         shell: bash
         run: |
           set -euo pipefail
-          run="$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          ref="$OCI_REPOSITORY:$VERSION"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-            >"$RUNNER_TEMP/last-draft-read.json"
-          jq -e --arg marker "$MARKER" --arg manifest "$MANIFEST_DIGEST" \
-            --arg component "sha256:$COMPONENT_SHA256" '
-            .draft == true and .tag_name == "v0.1.0" and
-            ((.body // "") | startswith($marker)) and
-            ((.body // "") | contains($manifest)) and
-            ((.body // "") | contains($component)) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
-          ' "$RUNNER_TEMP/last-draft-read.json" >/dev/null
-          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN "$RUNNER_TEMP/oras")
-          test "$("${anonymous[@]}" manifest fetch --descriptor "$ref" | jq -er .digest)" = \
-            "$MANIFEST_DIGEST"
-          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/last-manifest-read.json"
-          source/scripts/verify-oci-manifest.py "$RUNNER_TEMP/last-manifest-read.json" \
-            dist/ripgrep-provider.wasm "$run" "$SOURCE_SHA"
+          expected_draft_body=$'provider-ripgrep-recovery-run:32740154322:1\n\nRecovery transaction awaiting verified public OCI bytes.\n'
+
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" >"$RUNNER_TEMP/last-main.json"
+          jq -e --arg control "$GITHUB_SHA" \
+            '.ref == "refs/heads/main" and .object.type == "commit" and .object.sha == $control' \
+            "$RUNNER_TEMP/last-main.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >"$RUNNER_TEMP/last-tag-ref.json"
+          jq -e --arg object "$TAG_OBJECT_SHA" \
+            '.ref == "refs/tags/v0.1.0" and .object.type == "tag" and .object.sha == $object' \
+            "$RUNNER_TEMP/last-tag-ref.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_OBJECT_SHA" >"$RUNNER_TEMP/last-tag.json"
+          jq -e --arg source "$SOURCE_SHA" \
+            '.tag == "v0.1.0" and .object.type == "commit" and .object.sha == $source' \
+            "$RUNNER_TEMP/last-tag.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID" \
+            >"$RUNNER_TEMP/last-draft.json"
+          jq -e --argjson release "$DRAFT_RELEASE_ID" --arg body "$expected_draft_body" \
+            --argjson component_asset "$DRAFT_COMPONENT_ASSET_ID" \
+            --argjson checksum_asset "$DRAFT_CHECKSUM_ASSET_ID" \
+            --arg component "$COMPONENT_DIGEST" --arg checksum "$CHECKSUM_DIGEST" '
+            .id == $release and .draft == true and .prerelease == false and
+            .tag_name == "v0.1.0" and .target_commitish == "main" and
+            .name == "v0.1.0" and .body == $body and .published_at == null and
+            .updated_at == "2026-08-24T14:43:06Z" and
+            ([.assets[] | {id, name, digest}] | sort_by(.id)) == ([
+              {id:$component_asset, name:"ripgrep-provider.wasm", digest:$component},
+              {id:$checksum_asset, name:"ripgrep-provider.wasm.sha256", digest:$checksum}
+            ] | sort_by(.id))
+          ' "$RUNNER_TEMP/last-draft.json" >/dev/null
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -s 'add // []' >"$RUNNER_TEMP/last-releases.json"
+          jq -e --argjson release "$DRAFT_RELEASE_ID" '
+            [.[] | select(.tag_name == "v0.1.0")] as $matching |
+            ($matching | length) == 1 and $matching[0].id == $release and
+            $matching[0].draft == true and
+            ([.[] | select(.tag_name == "v0.1.0" and .draft == false)] | length) == 0
+          ' "$RUNNER_TEMP/last-releases.json" >/dev/null
+
+          mkdir "$RUNNER_TEMP/last-draft-assets"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$DRAFT_COMPONENT_ASSET_ID" \
+            >"$RUNNER_TEMP/last-draft-assets/ripgrep-provider.wasm"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$DRAFT_CHECKSUM_ASSET_ID" \
+            >"$RUNNER_TEMP/last-draft-assets/ripgrep-provider.wasm.sha256"
+          cmp dist/ripgrep-provider.wasm \
+            "$RUNNER_TEMP/last-draft-assets/ripgrep-provider.wasm"
+          cmp dist/ripgrep-provider.wasm.sha256 \
+            "$RUNNER_TEMP/last-draft-assets/ripgrep-provider.wasm.sha256"
+
+          gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
+            >"$RUNNER_TEMP/last-package.json"
+          jq -e --argjson package "$PACKAGE_ID" '
+            .id == $package and .name == "provider-ripgrep" and
+            .package_type == "container" and .visibility == "public"
+          ' "$RUNNER_TEMP/last-package.json" >/dev/null
           gh api --paginate \
             /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-            >"$RUNNER_TEMP/last-versions-read.jsons"
-          jq -se --arg digest "$MANIFEST_DIGEST" '
+            >"$RUNNER_TEMP/last-versions.jsons"
+          jq -se --argjson version "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
             [.[][]] as $versions |
-            ($versions | length) == 1 and
+            ($versions | length) == 1 and $versions[0].id == $version and
             $versions[0].name == $digest and
             (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-          ' "$RUNNER_TEMP/last-versions-read.jsons" >/dev/null
+          ' "$RUNNER_TEMP/last-versions.jsons" >/dev/null
 
-          jq -n '{draft: false}' >"$RUNNER_TEMP/finalize.json"
-          # This PATCH is the recovery transaction's final mutation.
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN \
+            DOCKER_CONFIG="$RUNNER_TEMP/anonymous-docker" "$RUNNER_TEMP/oras")
+          ref="$OCI_REPOSITORY:$VERSION"
+          test "$("${anonymous[@]}" manifest fetch --descriptor "$ref" | jq -er .digest)" = \
+            "$MANIFEST_DIGEST"
+          test "$("${anonymous[@]}" manifest fetch --descriptor \
+            "$OCI_REPOSITORY@$MANIFEST_DIGEST" | jq -er .digest)" = "$MANIFEST_DIGEST"
+          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/last-manifest.json"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/last-manifest.json" | awk '{print $1}')" = \
+            "$MANIFEST_DIGEST"
+          jq -e --arg run "$PRIOR_RUN_ID:1" --arg component "$COMPONENT_DIGEST" \
+            --argjson size "$COMPONENT_SIZE" '
+            .annotations["org.dekopon.release.run"] == $run and
+            (.layers | length) == 1 and .layers[0].mediaType == "application/wasm" and
+            .layers[0].digest == $component and .layers[0].size == $size and
+            .layers[0].annotations["org.opencontainers.image.title"] ==
+              "dist/ripgrep-provider.wasm"
+          ' "$RUNNER_TEMP/last-manifest.json" >/dev/null
+          for forbidden in latest staging; do
+            if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:$forbidden" \
+              >/dev/null 2>"$RUNNER_TEMP/last-$forbidden.err"; then
+              echo "error: forbidden $forbidden OCI tag appeared before finalization" >&2
+              exit 1
+            fi
+            grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
+              "$RUNNER_TEMP/last-$forbidden.err"
+          done
+          status=$(env -u GH_TOKEN -u GITHUB_TOKEN curl --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            --output "$RUNNER_TEMP/last-anonymous-release.json" --write-out '%{http_code}' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG")
+          test "$status" = 404
+
+          source/scripts/embed-license-bundle.py verify-text \
+            "$RUNNER_TEMP/release-notes.md" "$GITHUB_WORKSPACE/source"
+          jq -n --rawfile body "$RUNNER_TEMP/release-notes.md" '{
+            body: $body,
+            name: "v0.1.0",
+            prerelease: false,
+            draft: false
+          }' >"$RUNNER_TEMP/finalize.json"
+
+          # This PATCH is the residual finalizer's only remote mutation.
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID" \
             --input "$RUNNER_TEMP/finalize.json" >"$RUNNER_TEMP/published.json"
-          jq -e --arg marker "$MARKER" '
-            .draft == false and .prerelease == false and .tag_name == "v0.1.0" and
-            .name == "v0.1.0" and ((.body // "") | startswith($marker))
+          jq -e --argjson release "$DRAFT_RELEASE_ID" --arg marker "$PRIOR_MARKER" \
+            --rawfile body "$RUNNER_TEMP/release-notes.md" '
+            .id == $release and .draft == false and .prerelease == false and
+            .tag_name == "v0.1.0" and .name == "v0.1.0" and
+            .body == $body and (.body | startswith($marker)) and .published_at != null and
+            ([.assets[].name] | sort) ==
+              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
           ' "$RUNNER_TEMP/published.json" >/dev/null
 
   verify_final:
-    name: post-finalization anonymous read-only verification
-    needs: [preflight, draft, publish, finalize]
+    name: anonymous read-only verification after residual finalization
+    needs: finalize
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Check out only immutable source verification scripts
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -834,7 +884,7 @@ jobs:
           persist-credentials: false
           ref: 8bf0ba18f9240d5924d008d09283a5cd7c879f84
           path: source
-      - name: Download the exact named artifact once more from the fixed source run
+      - name: Download the exact retained source artifact again
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-assets
@@ -842,7 +892,7 @@ jobs:
           github-token: ${{ github.token }}
           repository: dekopon-agents/dekopon-provider-ripgrep
           run-id: "32733258088"
-      - name: Install pinned ORAS and component validator
+      - name: Install pinned ORAS for anonymous reads
         shell: bash
         run: |
           set -euo pipefail
@@ -853,30 +903,40 @@ jobs:
           echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" |
             sha256sum --check --strict -
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
-          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal
-          cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasm-tools \
-            --version "$WASM_TOOLS_VERSION" --locked
-      - name: Verify the final release anonymously and the package by tag and digest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MARKER: ${{ needs.draft.outputs.marker }}
-          MANIFEST_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
+          test "$("$RUNNER_TEMP/oras" version | awk 'NR == 1 {print $2}')" = "$ORAS_VERSION"
+          mkdir "$RUNNER_TEMP/anonymous-docker"
+          printf '{"auths":{}}\n' >"$RUNNER_TEMP/anonymous-docker/config.json"
+      - name: Verify the release and both assets anonymously
         shell: bash
         run: |
           set -euo pipefail
-          source/scripts/verify-release-assets.sh "$PWD/dist"
+          test "$(sha256sum dist/ripgrep-provider.wasm | awk '{print $1}')" = "$COMPONENT_SHA256"
+          test "$(sha256sum dist/ripgrep-provider.wasm.sha256 | awk '{print $1}')" = \
+            "$CHECKSUM_SHA256"
           env -u GH_TOKEN -u GITHUB_TOKEN curl --fail --silent --show-error --location \
             -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
             --output "$RUNNER_TEMP/anonymous-release.json"
-          jq -e --arg marker "$MARKER" --arg manifest "$MANIFEST_DIGEST" \
-            --arg component "sha256:$COMPONENT_SHA256" '
-            .draft == false and .prerelease == false and .tag_name == "v0.1.0" and
-            .name == "v0.1.0" and ((.body // "") | startswith($marker)) and
+          jq -e \
+            --argjson release "$DRAFT_RELEASE_ID" \
+            --argjson component_asset "$DRAFT_COMPONENT_ASSET_ID" \
+            --argjson checksum_asset "$DRAFT_CHECKSUM_ASSET_ID" \
+            --arg marker "$PRIOR_MARKER" \
+            --arg manifest "$MANIFEST_DIGEST" \
+            --arg component "$COMPONENT_DIGEST" \
+            --arg checksum "$CHECKSUM_DIGEST" \
+            --arg artifact "$SOURCE_ARTIFACT_ARCHIVE_DIGEST" '
+            .id == $release and .draft == false and .prerelease == false and
+            .tag_name == "v0.1.0" and .name == "v0.1.0" and
+            ((.body // "") | startswith($marker)) and
             ((.body | indices($manifest) | length) == 1) and
             ((.body | indices($component) | length) == 1) and
-            ([.assets[].name] | sort) ==
-              ["ripgrep-provider.wasm", "ripgrep-provider.wasm.sha256"]
+            ((.body | indices($checksum) | length) == 1) and
+            ((.body | indices($artifact) | length) == 1) and
+            ([.assets[] | {id, name, digest}] | sort_by(.id)) == ([
+              {id:$component_asset, name:"ripgrep-provider.wasm", digest:$component},
+              {id:$checksum_asset, name:"ripgrep-provider.wasm.sha256", digest:$checksum}
+            ] | sort_by(.id))
           ' "$RUNNER_TEMP/anonymous-release.json" >/dev/null
           jq -er .body "$RUNNER_TEMP/anonymous-release.json" >"$RUNNER_TEMP/anonymous-notes.md"
           source/scripts/embed-license-bundle.py verify-text \
@@ -893,184 +953,86 @@ jobs:
               "$url" --output "$RUNNER_TEMP/anonymous-release-assets/$name"
             cmp "dist/$name" "$RUNNER_TEMP/anonymous-release-assets/$name"
           done
-          source/scripts/verify-release-assets.sh "$RUNNER_TEMP/anonymous-release-assets"
-
-          run="$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+          test "$(find "$RUNNER_TEMP/anonymous-release-assets" -type f | wc -l)" -eq 2
+      - name: Verify tag proof and exact public package read-only after finalization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >"$RUNNER_TEMP/post-tag-ref.json"
+          jq -e --arg object "$TAG_OBJECT_SHA" '
+            .ref == "refs/tags/v0.1.0" and .object.type == "tag" and .object.sha == $object
+          ' "$RUNNER_TEMP/post-tag-ref.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_OBJECT_SHA" >"$RUNNER_TEMP/post-tag.json"
+          jq -e --arg source "$SOURCE_SHA" '
+            .tag == "v0.1.0" and .object.type == "commit" and .object.sha == $source and
+            .message == "dekopon-provider-ripgrep v0.1.0\n"
+          ' "$RUNNER_TEMP/post-tag.json" >/dev/null
+          gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
+            >"$RUNNER_TEMP/post-package.json"
+          jq -e --argjson package "$PACKAGE_ID" --argjson repository "$REPOSITORY_ID" '
+            .id == $package and .name == "provider-ripgrep" and
+            .package_type == "container" and .visibility == "public" and
+            .repository.id == $repository
+          ' "$RUNNER_TEMP/post-package.json" >/dev/null
+          gh api --paginate \
+            /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
+            >"$RUNNER_TEMP/post-versions.jsons"
+          jq -se --argjson version "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
+            [.[][]] as $versions |
+            ($versions | length) == 1 and $versions[0].id == $version and
+            $versions[0].name == $digest and
+            (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
+          ' "$RUNNER_TEMP/post-versions.jsons" >/dev/null
+      - name: Verify exact manifest and layer bytes anonymously after finalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN \
+            DOCKER_CONFIG="$RUNNER_TEMP/anonymous-docker" "$RUNNER_TEMP/oras")
           ref="$OCI_REPOSITORY:$VERSION"
-          anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN "$RUNNER_TEMP/oras")
           test "$("${anonymous[@]}" manifest fetch --descriptor "$ref" | jq -er .digest)" = \
             "$MANIFEST_DIGEST"
           test "$("${anonymous[@]}" manifest fetch --descriptor \
             "$OCI_REPOSITORY@$MANIFEST_DIGEST" | jq -er .digest)" = "$MANIFEST_DIGEST"
-          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/post-manifest.json"
-          source/scripts/verify-oci-manifest.py "$RUNNER_TEMP/post-manifest.json" \
-            dist/ripgrep-provider.wasm "$run" "$SOURCE_SHA"
+          "${anonymous[@]}" manifest fetch "$ref" >"$RUNNER_TEMP/post-tag-manifest.json"
+          "${anonymous[@]}" manifest fetch "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
+            >"$RUNNER_TEMP/post-digest-manifest.json"
+          cmp "$RUNNER_TEMP/post-tag-manifest.json" "$RUNNER_TEMP/post-digest-manifest.json"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/post-tag-manifest.json" | awk '{print $1}')" = \
+            "$MANIFEST_DIGEST"
+          test "$(wc -c <"$RUNNER_TEMP/post-tag-manifest.json" | tr -d ' ')" = "$MANIFEST_SIZE"
+          jq -e --arg run "$PRIOR_RUN_ID:1" --arg source "$SOURCE_SHA" \
+            --arg created "$MANIFEST_CREATED" --arg component "$COMPONENT_DIGEST" \
+            --argjson size "$COMPONENT_SIZE" '
+            .schemaVersion == 2 and
+            .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+            .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
+            .annotations["org.dekopon.release.run"] == $run and
+            .annotations["org.opencontainers.image.revision"] == $source and
+            .annotations["org.opencontainers.image.created"] == $created and
+            .annotations["org.dekopon.provider.capability"] == "ripgrep.search" and
+            (.layers | length) == 1 and .layers[0].mediaType == "application/wasm" and
+            .layers[0].digest == $component and .layers[0].size == $size and
+            .layers[0].annotations["org.opencontainers.image.title"] ==
+              "dist/ripgrep-provider.wasm"
+          ' "$RUNNER_TEMP/post-tag-manifest.json" >/dev/null
+
           mkdir "$RUNNER_TEMP/post-tag-pull" "$RUNNER_TEMP/post-digest-pull"
           "${anonymous[@]}" pull "$ref" --output "$RUNNER_TEMP/post-tag-pull"
           "${anonymous[@]}" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
             --output "$RUNNER_TEMP/post-digest-pull"
-          cmp dist/ripgrep-provider.wasm "$RUNNER_TEMP/post-tag-pull/ripgrep-provider.wasm"
-          cmp dist/ripgrep-provider.wasm "$RUNNER_TEMP/post-digest-pull/ripgrep-provider.wasm"
-          if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:latest" \
-            >/dev/null 2>"$RUNNER_TEMP/post-latest.err"; then
-            echo "error: forbidden latest tag exists after finalization" >&2
-            exit 1
-          fi
-          grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
-            "$RUNNER_TEMP/post-latest.err"
-          gh api --paginate \
-            /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-            >"$RUNNER_TEMP/post-versions.jsons"
-          jq -se --arg digest "$MANIFEST_DIGEST" '
-            [.[][]] as $versions |
-            ($versions | length) == 1 and
-            $versions[0].name == $digest and
-            (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-          ' "$RUNNER_TEMP/post-versions.jsons" >/dev/null
-
-  cleanup_failed_recovery:
-    name: delete only this run's annotation-owned manifest and marker-owned draft
-    if: ${{ always() && needs.finalize.result != 'success' }}
-    needs: [preflight, draft, publish, finalize]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Install pinned ORAS
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location \
-            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
-            --output "$RUNNER_TEMP/$archive"
-          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" |
-            sha256sum --check --strict -
-          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
-      - name: Authenticate only for narrowly verified cleanup
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Preserve unrelated state; delete only exact run-owned effects
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          OUTPUT_MARKER: ${{ needs.draft.outputs.marker }}
-          OUTPUT_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          run="$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          marker="provider-ripgrep-recovery-run:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          [[ -z "$OUTPUT_MARKER" || "$OUTPUT_MARKER" == "$marker" ]]
-          [[ -z "$OUTPUT_DIGEST" || "$OUTPUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -s 'add // []' >"$RUNNER_TEMP/all-releases.json"
-          if jq -e '[.[] | select(.tag_name == "v0.1.0" and .draft == false)] | length > 0' \
-            "$RUNNER_TEMP/all-releases.json" >/dev/null; then
-            echo "preserving finalized immutable release and linked OCI package" >&2
-            exit 0
-          fi
-          jq --arg marker "$marker" '
-            [.[] | select(
-              .tag_name == "v0.1.0" and ((.body // "") | startswith($marker))
-            )] |
-            if length == 1 then .[0] elif length == 0 then null
-            else error("multiple run-owned releases") end
-          ' "$RUNNER_TEMP/all-releases.json" >"$RUNNER_TEMP/owned-release.json"
-          release_id=
-          if jq -e '. != null' "$RUNNER_TEMP/owned-release.json" >/dev/null; then
-            jq -e --arg marker "$marker" '
-              .draft == true and .tag_name == "v0.1.0" and
-              ((.body // "") | startswith($marker))
-            ' "$RUNNER_TEMP/owned-release.json" >/dev/null
-            release_id=$(jq -er .id "$RUNNER_TEMP/owned-release.json")
-            [[ "$release_id" =~ ^[0-9]+$ ]]
-            [[ -z "$RELEASE_ID" || "$RELEASE_ID" == "$release_id" ]]
-          fi
-
-          ref="$OCI_REPOSITORY:$VERSION"
-          digest=
-          version_id=
-          if descriptor=$("$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
-            2>"$RUNNER_TEMP/cleanup-descriptor.err"); then
-            digest=$(jq -er .digest <<<"$descriptor")
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-            [[ -z "$OUTPUT_DIGEST" || "$OUTPUT_DIGEST" == "$digest" ]]
-            "$RUNNER_TEMP/oras" manifest fetch "$OCI_REPOSITORY@$digest" \
-              >"$RUNNER_TEMP/cleanup-manifest.json"
-            jq -e --arg run "$run" --arg source "$SOURCE_SHA" \
-              --arg component "sha256:$COMPONENT_SHA256" --argjson size "$COMPONENT_SIZE" '
-              .schemaVersion == 2 and
-              .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
-              .annotations["org.dekopon.release.run"] == $run and
-              .annotations["org.opencontainers.image.source"] ==
-                "https://github.com/dekopon-agents/dekopon-provider-ripgrep" and
-              .annotations["org.opencontainers.image.version"] == "0.1.0" and
-              .annotations["org.opencontainers.image.revision"] == $source and
-              .annotations["org.opencontainers.image.licenses"] ==
-                "(MIT OR Apache-2.0) AND BSD-3-Clause" and
-              .annotations["org.dekopon.distribution.notices"] ==
-                "embedded:dekopon.third-party-notices" and
-              .annotations["org.dekopon.release.url"] ==
-                "https://github.com/dekopon-agents/dekopon-provider-ripgrep/releases/tag/v0.1.0" and
-              .annotations["org.dekopon.provider.capability"] == "ripgrep.search" and
-              (.layers | length) == 1 and
-              .layers[0].mediaType == "application/wasm" and
-              .layers[0].digest == $component and .layers[0].size == $size and
-              .layers[0].annotations["org.opencontainers.image.title"] ==
-                "ripgrep-provider.wasm"
-            ' "$RUNNER_TEMP/cleanup-manifest.json" >/dev/null
-            gh api --paginate \
-              /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-              >"$RUNNER_TEMP/cleanup-versions.jsons"
-            version_id=$(jq -ser --arg digest "$digest" '
-              [.[][]] as $versions |
-              if ($versions | length) == 1 and
-                 $versions[0].name == $digest and
-                 (($versions[0].metadata.container.tags // []) | sort) == ["0.1.0"]
-              then $versions[0].id
-              else error("owned manifest is missing, shared, or has another tag/version") end
-            ' "$RUNNER_TEMP/cleanup-versions.jsons")
-            [[ "$version_id" =~ ^[0-9]+$ ]]
-          elif ! grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404|denied' \
-            "$RUNNER_TEMP/cleanup-descriptor.err"; then
-            cat "$RUNNER_TEMP/cleanup-descriptor.err" >&2
-            exit 1
-          fi
-
-          if [[ -n "$version_id" ]]; then
-            gh api --method DELETE \
-              "/orgs/dekopon-agents/packages/container/provider-ripgrep/versions/$version_id"
-          fi
-          if [[ -n "$release_id" ]]; then
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
-          fi
-
-          if [[ -n "$digest" ]]; then
-            for _ in {1..30}; do
-              if ! "$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
-                >/dev/null 2>"$RUNNER_TEMP/deleted-manifest.err"; then
-                break
-              fi
-              sleep 2
-            done
-            if "$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
-              >/dev/null 2>"$RUNNER_TEMP/deleted-manifest.err"; then
-              echo "error: run-owned OCI manifest survived cleanup" >&2
+          cmp dist/ripgrep-provider.wasm \
+            "$RUNNER_TEMP/post-tag-pull/dist/ripgrep-provider.wasm"
+          cmp dist/ripgrep-provider.wasm \
+            "$RUNNER_TEMP/post-digest-pull/dist/ripgrep-provider.wasm"
+          for forbidden in latest staging; do
+            if "${anonymous[@]}" manifest fetch --descriptor "$OCI_REPOSITORY:$forbidden" \
+              >/dev/null 2>"$RUNNER_TEMP/post-$forbidden.err"; then
+              echo "error: forbidden $forbidden OCI tag exists after finalization" >&2
               exit 1
             fi
-            grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404|denied' \
-              "$RUNNER_TEMP/deleted-manifest.err"
-          fi
-          if [[ -n "$release_id" ]]; then
-            if gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-              >/dev/null 2>"$RUNNER_TEMP/deleted-release.err"; then
-              echo "error: run-owned draft survived cleanup" >&2
-              exit 1
-            fi
-            grep -Eqi 'not found|404' "$RUNNER_TEMP/deleted-release.err"
-          fi
-          printf 'cleanup removed manifest=%s draft=%s and preserved all unrelated state\n' \
-            "${digest:-absent}" "${release_id:-absent}"
+            grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
+              "$RUNNER_TEMP/post-$forbidden.err"
+          done
