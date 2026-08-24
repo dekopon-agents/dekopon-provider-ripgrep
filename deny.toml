@@ -1,0 +1,38 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "MIT",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = [
+  { crate = "grep-printer", reason = "the provider uses a bounded custom Sink" },
+  { crate = "globset", reason = "virtual documents are caller-fed; globs are not supported" },
+  { crate = "ignore", reason = "directory walking and ignore files are not supported" },
+  { crate = "pcre2", reason = "only Rust regex syntax is supported" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

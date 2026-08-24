@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROVIDER_MSRV: "1.89.0"
+  PROVIDER_RUST_TOOLCHAIN: "1.97.0"
+  WASM_TOOLS_VERSION: "1.236.1"
+  CARGO_DENY_VERSION: "0.20.2"
+  DEKOPON_RUN_VERSION: "0.11.1"
+  WASMTIME_VERSION: "48.0.0"
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_LINUX_AMD64_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+
+jobs:
+  source:
+    name: source, native tests, MSRV, and policy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Reject source-controlled Wasm before repository code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git ls-files '*.wasm')"
+      - name: Install pinned Rust toolchains and target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$PROVIDER_MSRV" --profile minimal
+          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal \
+            --component clippy --component rustfmt
+          rustup target add wasm32-unknown-unknown --toolchain "$PROVIDER_RUST_TOOLCHAIN"
+      - name: Install pinned policy and workflow tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install cargo-deny \
+            --version "$CARGO_DENY_VERSION" --locked
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck ruby
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "$ACTIONLINT_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" | \
+            sha256sum --check --strict -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          sudo install -m 0755 "$RUNNER_TEMP/actionlint" /usr/local/bin/actionlint
+      - name: Run complete source gates
+        run: ./scripts/validate-source.sh
+
+  component:
+    name: component, direct host, testkit, and resources
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Reject source-controlled Wasm before repository code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git ls-files '*.wasm')"
+      - name: Install pinned Rust and component tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain "$PROVIDER_RUST_TOOLCHAIN"
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasm-tools \
+            --version "$WASM_TOOLS_VERSION" --locked
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install dekopon-run \
+            --version "$DEKOPON_RUN_VERSION" --locked
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasmtime-cli \
+            --version "$WASMTIME_VERSION" --locked
+      - name: Build and inspect the bounded zero-import component
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/build-component.sh
+          ./scripts/inspect-component.sh
+      - name: Run raw, direct, broker-testkit, fuel, memory, and resource gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/test-raw-component.sh
+          ./scripts/test-direct-host.sh
+          ./scripts/test-resource-limits.sh
+          ./scripts/test-broker-testkit.sh
+      - name: Prepare exact two-file review artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/prepare-release-assets.sh 0.1.0 "$PWD/dist"
+          ./scripts/verify-release-assets.sh "$PWD/dist"
+      - name: Upload ignored review artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ripgrep-provider-component
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  reproducible:
+    name: two clean pinned builds are byte-identical
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned Rust and wasm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain "$PROVIDER_RUST_TOOLCHAIN"
+          cargo +"$PROVIDER_RUST_TOOLCHAIN" install wasm-tools \
+            --version "$WASM_TOOLS_VERSION" --locked
+      - name: Build two clean source snapshots and compare core/component bytes
+        run: ./scripts/reproducible-build.sh

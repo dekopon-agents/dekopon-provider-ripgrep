@@ -1,0 +1,10 @@
+/target/
+/dist/
+/ripgrep-provider.wasm
+/ripgrep-provider.wasm.sha256
+*.wasm
+*.wasm.sha256
+*.tmp
+__pycache__/
+*.pyc
+.DS_Store

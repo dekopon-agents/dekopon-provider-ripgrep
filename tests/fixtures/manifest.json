@@ -1,0 +1,125 @@
+{
+  "apiVersion": "dekopon.dev/provider/v1alpha1",
+  "id": "ripgrep",
+  "description": "Searches bounded caller-supplied UTF-8 virtual documents with Rust ripgrep matchers; never reads paths or performs I/O",
+  "capabilities": [
+    {
+      "id": "ripgrep.search",
+      "description": "Search 1–16 virtual documents in caller order with bounded regex/fixed matching, context, byte offsets, and deterministic truncation",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Closed semantic input. Runtime limits include 64 submatches per selected result and a 1000000-byte provider success envelope. The host separately enforces the raw serialized invocation limit.",
+        "properties": {
+          "case": {
+            "default": "sensitive",
+            "enum": [
+              "sensitive",
+              "insensitive",
+              "smart"
+            ],
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": false,
+            "description": "Both counts are required when context is supplied; defaults to zero lines on both sides.",
+            "properties": {
+              "after": {
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "before": {
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "before",
+              "after"
+            ],
+            "type": "object"
+          },
+          "documents": {
+            "description": "Caller-fed virtual documents in search order. Paths must be exact-byte unique. Each text is at most 131072 decoded UTF-8 bytes and aggregate text is at most 786432 decoded UTF-8 bytes.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "description": "Opaque relative /-separated label, enforced at 1–256 UTF-8 bytes; never dereferenced. Empty, dot, dot-dot, control, backslash, absolute, drive-prefixed, UNC-like, and empty components are rejected.",
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "text": {
+                  "description": "Decoded UTF-8 virtual content, at most 131072 bytes. LF alone terminates lines; CR and BOM bytes are preserved.",
+                  "maxLength": 131072,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "invert": {
+            "default": false,
+            "description": "Select non-matching lines; incompatible with multiline.",
+            "type": "boolean"
+          },
+          "line": {
+            "default": false,
+            "description": "Require a whole LF-delimited line; cannot be combined with word or multiline.",
+            "type": "boolean"
+          },
+          "max_results": {
+            "default": 100,
+            "description": "Maximum returned selected records, not occurrences or context records.",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "default": "regex",
+            "description": "Regex syntax, or one literal fixed string.",
+            "enum": [
+              "regex",
+              "fixed"
+            ],
+            "type": "string"
+          },
+          "multiline": {
+            "default": false,
+            "description": "Permit explicit matches across LF. Dot still excludes LF unless the Rust pattern enables s; cannot be combined with line or invert.",
+            "type": "boolean"
+          },
+          "pattern": {
+            "description": "One Rust-regex pattern or one fixed literal, enforced at 1–4,096 decoded UTF-8 bytes. PCRE2 look-around and backreferences are unsupported.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "word": {
+            "default": false,
+            "description": "Require ripgrep word-boundary matching; cannot be combined with line.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "documents",
+          "pattern"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "commandWords": []
+}
