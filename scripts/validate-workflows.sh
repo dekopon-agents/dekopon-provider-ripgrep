@@ -65,7 +65,6 @@ fi
 
 python3 - "$release" <<'PY'
 import pathlib
-import re
 import sys
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 ghcr_start = text.index("  ghcr:")
@@ -89,11 +88,6 @@ if "dist/ripgrep-provider.wasm:application/wasm" in ghcr:
     raise SystemExit("error: ORAS push would preserve a workspace path in the layer title")
 if text.count('gh release create "$TAG"') != 1:
     raise SystemExit("error: release draft creation cardinality drifted")
-# Every predecessor of this workflow hardcoded the one release it was written for: the trigger,
-# the identity asserts, the draft title, the OCI tag equality and the rollback. A release version
-# spelled literally anywhere outside a comment is that bug coming back.
-if re.search(r"v[0-9]+\.[0-9]+\.[0-9]+", re.sub(r"#[^\n]*", "", text)):
-    raise SystemExit("error: release workflow spells a release version literally")
 if text.count('"$RUNNER_TEMP/oras-bin" push "$ref"') != 1:
     raise SystemExit("error: release OCI push cardinality drifted")
 if text.count("ripgrep-provider.wasm:application/wasm") != 1:

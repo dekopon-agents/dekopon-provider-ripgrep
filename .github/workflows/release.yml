@@ -333,18 +333,9 @@ jobs:
           ./scripts/verify-oci-manifest.py "$RUNNER_TEMP/authenticated-manifest.json" \
             dist/ripgrep-provider.wasm "$run" "$GITHUB_SHA" "$VERSION"
 
-          for _ in {1..30}; do
-            visibility=$(gh api /orgs/dekopon-agents/packages/container/provider-ripgrep \
-              --jq .visibility 2>/dev/null || true)
-            if [[ "$visibility" == public ]]; then break; fi
-            if [[ "$visibility" == private ]]; then
-              gh api --method PATCH \
-                /orgs/dekopon-agents/packages/container/provider-ripgrep \
-                -f visibility=public >/dev/null
-            fi
-            sleep 2
-          done
-          test "$(gh api /orgs/dekopon-agents/packages/container/provider-ripgrep --jq .visibility)" = public
+          # Nothing here sets package visibility: GHCR publishes a public repository's package
+          # public on first push, and the visibility PATCH this used to attempt is not an endpoint
+          # GitHub serves. The anonymous fetch and pull below are the receipt.
 
           docker logout ghcr.io
           anonymous=(env -u GH_TOKEN -u GITHUB_TOKEN "$RUNNER_TEMP/oras-bin")
