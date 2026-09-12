@@ -34,7 +34,7 @@ fi
 metadata=$(cargo metadata --locked --manifest-path "$root/Cargo.toml" --format-version 1)
 sdk_manifest=$(jq -er '
   .packages[] |
-  select(.name == "dekopon-provider-sdk" and .version == "0.11.1") |
+  select(.name == "dekopon-provider-sdk" and .version == "0.13.0") |
   .manifest_path
 ' <<<"$metadata")
 cmp "$(dirname "$sdk_manifest")/wit/provider.wit" "$root/wit/provider.wit"

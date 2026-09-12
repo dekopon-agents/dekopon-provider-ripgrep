@@ -4,8 +4,8 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 component=${1:-"$root/ripgrep-provider.wasm"}
 [[ -f "$component" ]] || { echo "error: missing $component" >&2; exit 1; }
-[[ "$(wasmtime --version)" == "wasmtime 48.0.0" ]] || {
-  echo "error: wasmtime 48.0.0 is required" >&2
+[[ "$(wasmtime --version)" == "wasmtime 48.0.2" ]] || {
+  echo "error: wasmtime 48.0.2 is required" >&2
   exit 1
 }
 

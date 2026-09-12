@@ -4,8 +4,8 @@
 
 Report suspected vulnerabilities privately through GitHub's security-advisory flow for
 `dekopon-agents/dekopon-provider-ripgrep`. Do not include private document content in a public
-issue. This repository supports the immutable v0.1.0 line; a fix is released as a new version and
-never by replacing published v0.1.0 bytes.
+issue. Every published version of this repository is immutable; a fix is released as a new version
+and never by replacing bytes already published under an existing one.
 
 ## Authority boundary
 
@@ -72,14 +72,15 @@ exact. `cargo-deny` limits registries, licenses, advisories, and forbidden packa
 tracked `*.wasm`, validates both core and component modules, proves zero imports, checks decoded WIT,
 and enforces the 2,000,000-byte component ceiling. All third-party Actions are full commit SHAs.
 
-The v0.1.0 release workflow:
+The release workflow:
 
-1. accepts only an annotated `v0.1.0` tag whose peeled commit has version 0.1.0 and is in `main`;
-2. runs all source/component/host/resource/license gates and compares two clean Rust 1.97.0 builds;
+1. accepts only an annotated `v<version>` tag whose peeled commit declares that exact crate version
+   and is in `main`;
+2. runs all source/component/host/resource/license gates and compares two clean Rust 1.98.1 builds;
 3. verifies the byte-exact MIT/Apache/WHATWG notice bundle embedded in the Wasm, then attests
    exactly `ripgrep-provider.wasm` and its SHA-256 file;
-4. creates a run-marked draft, then pushes directly to the sole final
-   `ghcr.io/dekopon-agents/provider-ripgrep:0.1.0` tag;
+4. creates a run-marked draft, then pushes directly to that version's sole immutable
+   `ghcr.io/dekopon-agents/provider-ripgrep:<version>` tag;
 5. verifies the one `application/wasm` layer, artifact type, digest, BSD-inclusive SPDX annotation,
    embedded-notice annotation, and anonymously pulled bytes;
 6. publishes release notes containing the OCI manifest digest, limitations, and the complete
@@ -87,6 +88,7 @@ The v0.1.0 release workflow:
    last mutation.
 
 No `latest`, temporary, or staging OCI tag is created. Failure cleanup resolves only the exact
-run-marked draft and final manifest, verifies run ownership plus sole-tag package metadata, and
-preserves anything it cannot prove belongs exclusively to that failed run. Published release bytes
+run-marked draft and the manifest this run pushed, verifies run ownership plus that version's sole
+tag, and preserves anything it cannot prove belongs exclusively to that failed run — every
+predecessor's release and package version included. Published release bytes
 are immutable; recovery requires a new version.

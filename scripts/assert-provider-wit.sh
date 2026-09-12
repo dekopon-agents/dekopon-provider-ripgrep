@@ -16,6 +16,6 @@ jq -e '
   (.worlds[0].exports.invoke.function.result == "string") and
   (.interfaces == [])
 ' "$json" >/dev/null || {
-  echo "error: component WIT is not the import-free dekopon:provider@0.2.0 base shape" >&2
+  echo "error: component WIT is not the import-free dekopon:provider@0.3.0 base shape" >&2
   exit 1
 }

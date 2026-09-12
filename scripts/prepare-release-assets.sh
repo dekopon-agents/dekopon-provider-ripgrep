@@ -2,9 +2,16 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-version=${1:-0.1.0}
 destination=${2:-"$root/dist"}
-[[ "$version" == 0.1.0 ]] || { echo "error: only immutable v0.1.0 is supported" >&2; exit 1; }
+# The crate is the single source of the version; an argument may only agree with it.
+crate_version=$(cargo metadata --locked --no-deps --format-version 1 \
+  --manifest-path "$root/Cargo.toml" |
+  jq -er '.packages[] | select(.name == "dekopon-ripgrep-provider") | .version')
+version=${1:-$crate_version}
+[[ "$version" == "$crate_version" ]] || {
+  echo "error: requested v$version but this checkout is v$crate_version" >&2
+  exit 1
+}
 case "$destination" in
   "$root/dist"|"$root"/dist/*) ;;
   *) echo "error: release destination must be inside $root/dist" >&2; exit 1 ;;

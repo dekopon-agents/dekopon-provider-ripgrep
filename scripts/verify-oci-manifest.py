@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the immutable one-layer v0.1.0 provider OCI manifest."""
+"""Verify one immutable single-layer provider OCI manifest."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ import pathlib
 import re
 import sys
 
-VERSION = "0.1.0"
 SOURCE = "https://github.com/dekopon-agents/dekopon-provider-ripgrep"
-RELEASE = f"{SOURCE}/releases/tag/v{VERSION}"
 ARTIFACT_TYPE = "application/vnd.dekopon.provider.v1+wasm"
+VERSION_PATTERN = r"[0-9]+\.[0-9]+\.[0-9]+"
 
 
 def fail(message: str) -> None:
@@ -20,13 +19,15 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 5:
-        fail("usage: verify-oci-manifest.py MANIFEST COMPONENT RUN REVISION")
-    manifest_path, component_path, run, revision = sys.argv[1:]
+    if len(sys.argv) != 6:
+        fail("usage: verify-oci-manifest.py MANIFEST COMPONENT RUN REVISION VERSION")
+    manifest_path, component_path, run, revision, version = sys.argv[1:]
     if not re.fullmatch(r"[0-9]+:[0-9]+", run):
         fail("invalid run marker")
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         fail("invalid Git revision")
+    if not re.fullmatch(VERSION_PATTERN, version):
+        fail("invalid release version")
 
     manifest = json.loads(pathlib.Path(manifest_path).read_text(encoding="utf-8"))
     component = pathlib.Path(component_path)
@@ -43,12 +44,12 @@ def main() -> None:
 
     expected_annotations = {
         "org.opencontainers.image.source": SOURCE,
-        "org.opencontainers.image.version": VERSION,
+        "org.opencontainers.image.version": version,
         "org.opencontainers.image.revision": revision,
         "org.opencontainers.image.licenses": "(MIT OR Apache-2.0) AND BSD-3-Clause",
         "org.dekopon.distribution.notices": "embedded:dekopon.third-party-notices",
         "org.dekopon.release.run": run,
-        "org.dekopon.release.url": RELEASE,
+        "org.dekopon.release.url": f"{SOURCE}/releases/tag/v{version}",
         "org.dekopon.provider.capability": "ripgrep.search",
     }
     annotations = manifest.get("annotations", {})

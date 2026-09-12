@@ -13,7 +13,7 @@ mod search;
 use dekopon_provider_sdk::{CapabilityId, Provider, ProviderError, ProviderManifest};
 use serde_json::Value;
 
-/// The single v0.1.0 provider implementation.
+/// The single provider implementation.
 ///
 /// This type is public only so native integration tests can exercise the exact [`Provider`]
 /// boundary. The component exports remain solely `describe` and `invoke`.

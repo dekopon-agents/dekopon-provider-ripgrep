@@ -87,54 +87,32 @@ order: `max_results`, `max_output_bytes`, `max_submatches`.
 
 ## Run it
 
-Install `dekopon-run 0.11.1`. When v0.1.0 is published, obtain `ripgrep-provider.wasm` plus
-`ripgrep-provider.wasm.sha256` from the immutable release. The same Wasm bytes will be the sole layer
-at `ghcr.io/dekopon-agents/provider-ripgrep:0.1.0`. No `latest` tag is published. The Wasm embeds
-the complete distribution-license bundle in its `dekopon.third-party-notices` custom section; the
-GitHub release documentation reproduces that byte-exact bundle.
+Obtain `ripgrep-provider.wasm` and `ripgrep-provider.wasm.sha256` from the immutable release, whose
+bytes are the sole layer at `ghcr.io/dekopon-agents/provider-ripgrep:<version>`. No `latest` tag is
+published. The Wasm embeds the complete distribution-license bundle in its
+`dekopon.third-party-notices` custom section; the GitHub release documentation reproduces that
+byte-exact bundle.
 
-Verify the release checksum, then invoke inline:
+Verify the checksum, install the component in `dekopon-brokerd`, and grant `ripgrep.search`. The
+broker — not the component — owns authorization and every host resource ceiling, so an authorized
+proposal carries only the semantic input:
 
 ```console
 $ sha256sum --check ripgrep-provider.wasm.sha256
-$ dekopon-run invoke \
-    --provider ./ripgrep-provider.wasm \
-    --max-memory-bytes 67108864 \
-    --max-input-bytes 1048576 \
-    --max-output-bytes 1048576 \
-    --fuel 350000000 \
-    --timeout-ms 30000 \
-    ripgrep.search \
-    --input '{"documents":[{"path":"notes/today.md","text":"alpha\nbeta\n"}],"pattern":"alpha"}'
 ```
 
-For multiline input, avoid shell-escaping mistakes by using stdin:
-
-```console
-$ cat <<'JSON' | dekopon-run invoke \
-    --provider ./ripgrep-provider.wasm \
-    ripgrep.search --input-file -
+```json
 {
   "documents": [{"path": "virtual/log.txt", "text": "begin\ndetail\nend\n"}],
   "pattern": "begin(?s:.*?)end",
   "multiline": true
 }
-JSON
 ```
 
-After an operator installs the component in `dekopon-brokerd`, grants `ripgrep.search`, and exposes
-an owner-only socket, an authenticated broker proposal uses the same input:
-
-```console
-$ dekopon-run broker invoke \
-    --socket "$DEKOPON_BROKER_SOCKET" \
-    --invocation-id ripgrep-demo-0001 \
-    --trace-id ripgrep-demo-trace-0001 \
-    ripgrep.search \
-    --input '{"documents":[{"path":"virtual.txt","text":"one\ntwo\n"}],"pattern":"two"}'
-```
-
-The broker—not the component—owns authorization and host resource ceilings.
+To drive the component without a deployment, load it with `FakeBroker` from
+[`dekopon-provider-sdk-testkit`](https://docs.rs/dekopon-provider-sdk-testkit): the same Wasmtime
+host, the same limits, no policy. `tests/broker.rs` is that harness and
+`./scripts/test-broker-testkit.sh` runs it against a freshly built component.
 
 ## Limits and JSON boundary
 
@@ -159,8 +137,8 @@ selected records under 30,000,000 fuel. The larger release ceiling leaves measur
 SDK JSON materialization near the provider output boundary; the 30-second deadline remains an
 independent bound.
 
-The provider neither re-encodes nor estimates raw input size. `dekopon-run`/the broker serializes the
-semantic input and rejects an invocation over 1 MiB before entering the component. Thus highly
+The provider neither re-encodes nor estimates raw input size. The broker serializes the semantic
+input and rejects an invocation over 1 MiB before entering the component. Thus highly
 escaped JSON can exceed the wire limit while its decoded strings remain below provider limits.
 
 The SDK parses the complete WIT `input-json` string into `serde_json::Value` before calling the
@@ -206,17 +184,18 @@ Generated Wasm is ignored and must never be committed. Builds use each checkout'
 project-local compiler cache override.
 
 ```console
-rustup toolchain install 1.89.0 --profile minimal
-rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
-rustup target add wasm32-unknown-unknown --toolchain 1.97.0
-cargo +1.97.0 install wasm-tools --version 1.236.1 --locked
+rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
+rustup target add wasm32-unknown-unknown --toolchain 1.98.1
+cargo +1.98.1 install wasm-tools --version 1.259.0 --locked
+cargo +1.98.1 install wasmtime-cli --version 48.0.2 --locked
 ./scripts/validate.sh
 ./scripts/reproducible-build.sh
 ```
 
-`validate.sh` runs formatting, warnings-denied clippy, native/adversarial tests, MSRV and Wasm
-target checks, license/source policy, component validation, import/WIT/size inspection, raw SDK
-boundary tests, direct host tests, FakeBroker tests without storage, and resource limits. See
+`validate.sh` runs formatting, warnings-denied clippy, native/adversarial tests, Wasm target
+checks, license/source policy, component validation, import/WIT/size inspection, raw SDK boundary
+tests under the Wasmtime CLI, and the FakeBroker component-host gate covering concurrent storage-free
+invocation, the host wire bound, and every fuel and resource limit. See
 [`SECURITY.md`](SECURITY.md) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## License
