@@ -564,54 +564,57 @@ jobs:
             release_draft=true
           fi
 
-          ref="$OCI_REPOSITORY:$VERSION"
-          digest=
-          if descriptor=$("$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
-            2>"$RUNNER_TEMP/descriptor.err"); then
-            digest=$(jq -er .digest <<<"$descriptor")
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-            [[ -z "$EXPECTED_DIGEST" || "$digest" == "$EXPECTED_DIGEST" ]]
-            "$RUNNER_TEMP/oras" manifest fetch "$OCI_REPOSITORY@$digest" \
-              >"$RUNNER_TEMP/owned-manifest.json"
-            jq -e --arg run "$run" --arg revision "$GITHUB_SHA" --arg version "$VERSION" '
-              .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
-              .annotations["org.dekopon.release.run"] == $run and
-              .annotations["org.opencontainers.image.source"] ==
-                "https://github.com/dekopon-agents/dekopon-provider-ripgrep" and
-              .annotations["org.opencontainers.image.version"] == $version and
-              .annotations["org.opencontainers.image.revision"] == $revision and
-              .annotations["org.opencontainers.image.licenses"] ==
-                "(MIT OR Apache-2.0) AND BSD-3-Clause" and
-              .annotations["org.dekopon.distribution.notices"] ==
-                "embedded:dekopon.third-party-notices" and
-              (.layers | length) == 1 and .layers[0].mediaType == "application/wasm"
-            ' "$RUNNER_TEMP/owned-manifest.json" >/dev/null
+          # A failed build leaves no version, and therefore nothing this run could have pushed.
+          if [[ -n "$VERSION" ]]; then
+            ref="$OCI_REPOSITORY:$VERSION"
+            digest=
+            if descriptor=$("$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
+              2>"$RUNNER_TEMP/descriptor.err"); then
+              digest=$(jq -er .digest <<<"$descriptor")
+              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+              [[ -z "$EXPECTED_DIGEST" || "$digest" == "$EXPECTED_DIGEST" ]]
+              "$RUNNER_TEMP/oras" manifest fetch "$OCI_REPOSITORY@$digest" \
+                >"$RUNNER_TEMP/owned-manifest.json"
+              jq -e --arg run "$run" --arg revision "$GITHUB_SHA" --arg version "$VERSION" '
+                .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
+                .annotations["org.dekopon.release.run"] == $run and
+                .annotations["org.opencontainers.image.source"] ==
+                  "https://github.com/dekopon-agents/dekopon-provider-ripgrep" and
+                .annotations["org.opencontainers.image.version"] == $version and
+                .annotations["org.opencontainers.image.revision"] == $revision and
+                .annotations["org.opencontainers.image.licenses"] ==
+                  "(MIT OR Apache-2.0) AND BSD-3-Clause" and
+                .annotations["org.dekopon.distribution.notices"] ==
+                  "embedded:dekopon.third-party-notices" and
+                (.layers | length) == 1 and .layers[0].mediaType == "application/wasm"
+              ' "$RUNNER_TEMP/owned-manifest.json" >/dev/null
 
-            gh api --paginate \
-              /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
-              >"$RUNNER_TEMP/cleanup-versions.jsons"
-            # Only the version this run pushed is ever deleted. A predecessor's version is left
-            # exactly as it is, and the package itself is never touched.
-            version_id=$(jq -ser --arg digest "$digest" --arg version "$VERSION" '
-              [.[][] | select(.name == $digest)] as $matching |
-              if ($matching | length) == 1 and
-                 (($matching[0].metadata.container.tags // []) | sort) == [$version]
-              then $matching[0].id
-              else error("manifest is missing, shared, or has another tag/version") end
-            ' "$RUNNER_TEMP/cleanup-versions.jsons")
-            [[ "$version_id" =~ ^[0-9]+$ ]]
-            gh api --method DELETE \
-              "/orgs/dekopon-agents/packages/container/provider-ripgrep/versions/$version_id"
-            if "$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
-              >/dev/null 2>"$RUNNER_TEMP/deleted.err"; then
-              echo "error: run-owned final OCI reference survived cleanup" >&2
+              gh api --paginate \
+                /orgs/dekopon-agents/packages/container/provider-ripgrep/versions?per_page=100 \
+                >"$RUNNER_TEMP/cleanup-versions.jsons"
+              # Only the version this run pushed is ever deleted. A predecessor's version is left
+              # exactly as it is, and the package itself is never touched.
+              version_id=$(jq -ser --arg digest "$digest" --arg version "$VERSION" '
+                [.[][] | select(.name == $digest)] as $matching |
+                if ($matching | length) == 1 and
+                   (($matching[0].metadata.container.tags // []) | sort) == [$version]
+                then $matching[0].id
+                else error("manifest is missing, shared, or has another tag/version") end
+              ' "$RUNNER_TEMP/cleanup-versions.jsons")
+              [[ "$version_id" =~ ^[0-9]+$ ]]
+              gh api --method DELETE \
+                "/orgs/dekopon-agents/packages/container/provider-ripgrep/versions/$version_id"
+              if "$RUNNER_TEMP/oras" manifest fetch --descriptor "$ref" \
+                >/dev/null 2>"$RUNNER_TEMP/deleted.err"; then
+                echo "error: run-owned final OCI reference survived cleanup" >&2
+                exit 1
+              fi
+              grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' "$RUNNER_TEMP/deleted.err"
+            elif ! grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
+              "$RUNNER_TEMP/descriptor.err"; then
+              cat "$RUNNER_TEMP/descriptor.err" >&2
               exit 1
             fi
-            grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' "$RUNNER_TEMP/deleted.err"
-          elif ! grep -Eqi 'not found|manifest unknown|MANIFEST_UNKNOWN|404' \
-            "$RUNNER_TEMP/descriptor.err"; then
-            cat "$RUNNER_TEMP/descriptor.err" >&2
-            exit 1
           fi
 
           if [[ "$release_owned" == true && "$release_draft" == true ]]; then
