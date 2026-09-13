@@ -26,7 +26,7 @@ PY
 
 for required in \
   'tags:' \
-  '"v0.1.0"' \
+  '"v*"' \
   'test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag' \
   'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' \
   'application/vnd.dekopon.provider.v1+wasm' \
@@ -84,7 +84,7 @@ if not cd_dist < push < layer:
     raise SystemExit("error: ORAS must push the bare component path from within dist")
 if "dist/ripgrep-provider.wasm:application/wasm" in ghcr:
     raise SystemExit("error: ORAS push would preserve a workspace path in the layer title")
-if text.count("gh release create v0.1.0") != 1:
+if text.count('gh release create "$TAG"') != 1:
     raise SystemExit("error: release draft creation cardinality drifted")
 if text.count('"$RUNNER_TEMP/oras-bin" push "$ref"') != 1:
     raise SystemExit("error: release OCI push cardinality drifted")
@@ -218,7 +218,7 @@ manifest = {
 pathlib.Path(sys.argv[1]).write_text(json.dumps(manifest), encoding="utf-8")
 PY
 "$verifier" "$temporary/manifest.json" "$temporary/ripgrep-provider.wasm" \
-  1:1 "$(printf 'a%.0s' {1..40})"
+  1:1 "$(printf 'a%.0s' {1..40})" 0.1.0
 python3 - "$temporary/manifest.json" <<'PY'
 import json
 import pathlib
@@ -230,7 +230,7 @@ manifest["layers"][0]["annotations"]["org.opencontainers.image.title"] = \
 path.write_text(json.dumps(manifest), encoding="utf-8")
 PY
 if "$verifier" "$temporary/manifest.json" "$temporary/ripgrep-provider.wasm" \
-  1:1 "$(printf 'a%.0s' {1..40})" >/dev/null 2>&1; then
+  1:1 "$(printf 'a%.0s' {1..40})" 0.1.0 >/dev/null 2>&1; then
   echo 'error: normal OCI verifier was globally weakened to accept a path-bearing title' >&2
   exit 1
 fi
@@ -246,7 +246,7 @@ manifest["annotations"]["org.opencontainers.image.licenses"] = "MIT OR Apache-2.
 path.write_text(json.dumps(manifest), encoding="utf-8")
 PY
 if "$verifier" "$temporary/manifest.json" "$temporary/ripgrep-provider.wasm" \
-  1:1 "$(printf 'a%.0s' {1..40})" >/dev/null 2>&1; then
+  1:1 "$(printf 'a%.0s' {1..40})" 0.1.0 >/dev/null 2>&1; then
   echo 'error: normal OCI verifier accepted an incomplete binary license expression' >&2
   exit 1
 fi

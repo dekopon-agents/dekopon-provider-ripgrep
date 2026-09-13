@@ -5,9 +5,9 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 component=${1:-"$root/ripgrep-provider.wasm"}
 core="$root/target/wasm32-unknown-unknown/release/dekopon_ripgrep_provider.wasm"
-rust_toolchain=1.97.0
-required_rustc='rustc 1.97.0 (2d8144b78 2026-07-07)'
-required_wasm_tools='wasm-tools 1.236.1'
+rust_toolchain=1.98.1
+required_rustc='rustc 1.98.1 (48a229cea 2026-09-01)'
+required_wasm_tools='wasm-tools 1.259.0'
 
 # shellcheck source=lib-sha256.sh
 # The source path is rooted above, not relative to the caller.
@@ -60,7 +60,7 @@ CARGO_ENCODED_RUSTFLAGS="$encoded_rustflags" \
     --target wasm32-unknown-unknown \
     --release \
     -- \
-    -C metadata=dekopon-ripgrep-provider-0.1.0-repro-v1 \
+    -C metadata=dekopon-ripgrep-provider-0.2.0-repro-v1 \
     -C extra-filename=
 
 test -s "$core"

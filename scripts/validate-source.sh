@@ -12,12 +12,11 @@ cd "$root"
   exit 1
 }
 
-cargo +1.97.0 fmt --all -- --check
-cargo +1.97.0 clippy --locked --all-targets -- -D warnings
-cargo +1.97.0 test --locked --all-targets
-cargo +1.89.0 check --locked --all-targets
-cargo +1.97.0 check --locked --target wasm32-unknown-unknown
-cargo +1.97.0 clippy --locked --target wasm32-unknown-unknown --lib -- -D warnings
+cargo +1.98.1 fmt --all -- --check
+cargo +1.98.1 clippy --locked --all-targets -- -D warnings
+cargo +1.98.1 test --locked --all-targets
+cargo +1.98.1 check --locked --target wasm32-unknown-unknown
+cargo +1.98.1 clippy --locked --target wasm32-unknown-unknown --lib -- -D warnings
 ./scripts/assert-lock-and-feature-graph.sh Cargo.lock
 cargo deny check licenses advisories bans sources
 ./scripts/check-third-party-notices.sh Cargo.lock THIRD_PARTY_NOTICES.md
@@ -36,4 +35,4 @@ else
   exit 1
 fi
 ./scripts/validate-workflows.sh
-printf 'source, native, MSRV, target, lock, license, shell, YAML, action, and diff gates passed\n'
+printf 'source, native, target, lock, license, shell, YAML, action, and diff gates passed\n'

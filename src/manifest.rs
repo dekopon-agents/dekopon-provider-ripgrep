@@ -1,5 +1,5 @@
 use dekopon_provider_sdk::{
-    EffectKind, Idempotency, ProviderApiVersion, ProviderCapability, ProviderManifest, RiskLevel,
+    EffectKind, ProviderApiVersion, ProviderCapability, ProviderManifest, RiskLevel,
 };
 use serde_json::{Value, json};
 
@@ -26,7 +26,6 @@ pub(crate) fn manifest() -> ProviderManifest {
                 .to_owned(),
             effect: EffectKind::ReadOnly,
             risk: RiskLevel::Low,
-            idempotency: Idempotency::Idempotent,
             input_schema: input_schema(),
         }],
     }
@@ -137,7 +136,7 @@ fn input_schema() -> Value {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::{EffectKind, Idempotency, RiskLevel};
+    use dekopon_provider_sdk::{EffectKind, RiskLevel};
 
     use super::manifest;
 
@@ -151,7 +150,6 @@ mod tests {
         assert_eq!(capability.id.as_str(), "ripgrep.search");
         assert_eq!(capability.effect, EffectKind::ReadOnly);
         assert_eq!(capability.risk, RiskLevel::Low);
-        assert_eq!(capability.idempotency, Idempotency::Idempotent);
         assert_eq!(capability.input_schema["type"], "object");
         assert_eq!(capability.input_schema["additionalProperties"], false);
         assert_eq!(

@@ -28,7 +28,8 @@ Their upstream repository is <https://github.com/BurntSushi/ripgrep>. The graph 
 MIT/Apache-2.0 or Unlicense/MIT terms.
 
 `grep-searcher` unconditionally depends on `encoding_rs 0.8.35`, `encoding_rs_io 0.1.8`, and
-`memmap2 0.9.11`. Those packages are therefore present in the linked graph, but v0.1.0 explicitly
+`memmap2 0.9.11`. Those packages are therefore present in the linked graph, but the provider
+explicitly
 configures no encoding, disables BOM sniffing, selects `MmapChoice::never()`, and calls only
 `search_slice` over already decoded caller-owned UTF-8. No file, mmap, or transcoding API is
 invoked. `encoding_rs` is licensed under `(Apache-2.0 OR MIT) AND BSD-3-Clause`; its mandatory
@@ -36,12 +37,12 @@ WHATWG notice is reproduced verbatim below.
 
 ## Dekopon component interface
 
-The component uses `dekopon-provider-sdk 0.11.1`, with `dekopon-core 0.11.1` and
-`dekopon-capability 0.11.1`, under MIT OR Apache-2.0. Its generated component bindings use
-`wit-bindgen 0.44.0` and the Wasm/WIT 0.236.1 toolchain crates, under Apache-2.0 WITH
+The component uses `dekopon-provider-sdk 0.13.0`, with `dekopon-core 0.13.0` and
+`dekopon-capability 0.13.0`, under MIT OR Apache-2.0. Its generated component bindings use
+`wit-bindgen 0.62.0` and the Wasm/WIT 0.259.0 toolchain crates, under Apache-2.0 WITH
 LLVM-exception OR Apache-2.0 OR MIT. The release component has zero imports.
 
-`dekopon-provider-sdk-testkit 0.11.1`, Tokio, Wasmtime, HTTP-host, and storage-host packages occur
+`dekopon-provider-sdk-testkit 0.13.0`, Tokio, Wasmtime, HTTP-host, and storage-host packages occur
 only in native development/test resolution. They are not linked into `ripgrep-provider.wasm`; the
 component-target tree and decoded WIT gates enforce that distinction.
 
@@ -161,7 +162,7 @@ The following notice is reproduced verbatim from `encoding_rs 0.8.35/LICENSE-WHA
 > OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 > OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-### foldhash 0.1.5 — Zlib
+### foldhash 0.2.0 — Zlib
 
 > Copyright (c) 2024 Orson Peters
 >

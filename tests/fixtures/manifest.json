@@ -8,7 +8,6 @@
       "description": "Search 1–16 virtual documents in caller order with bounded regex/fixed matching, context, byte offsets, and deterministic truncation",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "description": "Closed semantic input. Runtime limits include 64 submatches per selected result and a 1000000-byte provider success envelope. The host separately enforces the raw serialized invocation limit.",

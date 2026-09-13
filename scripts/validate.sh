@@ -7,9 +7,7 @@ cd "$root"
 ./scripts/build-component.sh
 ./scripts/inspect-component.sh
 ./scripts/test-raw-component.sh
-./scripts/test-direct-host.sh
-./scripts/test-resource-limits.sh
 ./scripts/test-broker-testkit.sh
-./scripts/prepare-release-assets.sh 0.1.0 "$root/dist"
+./scripts/prepare-release-assets.sh "" "$root/dist"
 ./scripts/verify-release-assets.sh "$root/dist"
-printf 'all v0.1.0 source, component, direct-host, testkit, and resource gates passed\n'
+printf 'all source, component, raw-host, broker-host, and resource gates passed\n'

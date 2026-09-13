@@ -1,7 +1,22 @@
+//! Component-host gates: the compiled provider driven by the real broker host.
+//!
+//! Every case here needs the release artifact, so each returns early when
+//! `DEKOPON_RIPGREP_COMPONENT` is unset. `scripts/test-broker-testkit.sh` sets it after
+//! `scripts/build-component.sh` has produced the ignored component, which is the only way these
+//! bodies execute.
+
 use std::path::PathBuf;
 
-use dekopon_provider_sdk_testkit::{BrokerHostLimits, FakeBroker};
-use serde_json::json;
+use dekopon_provider_sdk_testkit::{BrokerHostLimits, FakeBroker, FakeBrokerError};
+use serde_json::{Value, json};
+
+/// The fuel a release deployment supplies, and the ceiling every bounded workload below fits in.
+const RELEASE_FUEL: u64 = 350_000_000;
+
+/// The widest decoded aggregate this provider accepts: six maximum-length documents.
+const MAX_DOCUMENT_TEXT_BYTES: usize = 131_072;
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn component() -> Option<PathBuf> {
     std::env::var_os("DEKOPON_RIPGREP_COMPONENT").map(PathBuf::from)
@@ -15,12 +30,35 @@ fn cache_directory() -> Result<PathBuf, std::io::Error> {
     directory.canonicalize()
 }
 
+/// Loads the component under a named fuel ceiling and otherwise untouched deployment limits.
+async fn broker(component: PathBuf, fuel: u64) -> Result<FakeBroker, FakeBrokerError> {
+    let limits = BrokerHostLimits {
+        fuel,
+        ..BrokerHostLimits::default()
+    };
+    FakeBroker::builder()
+        .component(component)
+        .provider("ripgrep")
+        // Deliberately no `.storage(...)`: the component has no authority or import to grant.
+        .host_limits(limits)
+        .compile_cache(cache_directory()?)
+        .build()
+        .await
+}
+
+/// Six maximum-length single-line documents: 786,432 decoded bytes, the aggregate ceiling.
+fn widest_documents() -> Value {
+    let text = format!("{}\n", "a".repeat(MAX_DOCUMENT_TEXT_BYTES - 1));
+    Value::Array(
+        (0..6)
+            .map(|index| json!({"path": format!("limits/d{index}"), "text": text}))
+            .collect(),
+    )
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fake_broker_invokes_concurrently_without_storage_and_enforces_wire_size()
--> Result<(), Box<dyn std::error::Error>> {
+async fn concurrent_invocations_need_no_storage_and_the_host_bounds_the_wire() -> TestResult {
     let Some(component) = component() else {
-        // Ordinary native tests compile this harness. The component gate sets the variable after
-        // producing the ignored release artifact and therefore executes the real broker host.
         return Ok(());
     };
     let defaults = BrokerHostLimits::default();
@@ -28,25 +66,15 @@ async fn fake_broker_invokes_concurrently_without_storage_and_enforces_wire_size
     assert_eq!(defaults.max_input_bytes, 1_048_576);
     assert_eq!(defaults.max_output_bytes, 1_048_576);
     assert_eq!(defaults.max_timeout.as_secs(), 30);
-    let release_limits = BrokerHostLimits {
-        fuel: 350_000_000,
-        ..defaults
-    };
 
-    let broker = FakeBroker::builder()
-        .component(component)
-        .provider("ripgrep")
-        // Deliberately no `.storage(...)`: the component has no authority or import to grant.
-        .host_limits(release_limits)
-        .compile_cache(cache_directory()?)
-        .build()
-        .await?;
+    let broker = broker(component, RELEASE_FUEL).await?;
 
     let first = broker.invoke(
         "ripgrep.search",
         json!({
-            "documents": [{"path": "one", "text": "alpha\nbeta\n"}],
-            "pattern": "alpha"
+            "documents": [{"path": "one", "text": "alpha\nbeta\nalpha\n"}],
+            "pattern": "alpha",
+            "max_results": 2
         }),
     );
     let second = broker.invoke(
@@ -66,7 +94,11 @@ async fn fake_broker_invokes_concurrently_without_storage_and_enforces_wire_size
         }),
     );
     let (first, second, third) = tokio::join!(first, second, third);
-    assert_eq!(first?["selected_count"], 1);
+    let first = first?;
+    assert_eq!(first["selected_count"], 2);
+    assert_eq!(first["truncated"], false);
+    assert_eq!(first["results"][0]["line_start"], 1);
+    assert_eq!(first["results"][1]["line_start"], 3);
     assert_eq!(second?["selected_count"], 2);
     assert_eq!(third?["results"][0]["text"], "y\n");
 
@@ -93,8 +125,192 @@ async fn fake_broker_invokes_concurrently_without_storage_and_enforces_wire_size
         "{detail}"
     );
 
-    let stats = broker.registry().metrics().snapshot();
-    assert!(stats.fuel_observations >= 3);
-    assert!(stats.fuel_consumed > 0);
+    // A closed-schema violation is the provider's own refusal, not the host's.
+    let refused = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "bad", "text": "x"}],
+                "pattern": "x",
+                "extra": true
+            }),
+        )
+        .await
+        .expect_err("the closed ripgrep.search schema rejects an unknown member");
+    let (code, _) = refused
+        .provider_failure()
+        .expect("the guest declared this failure");
+    assert_eq!(code, "invalid-input");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn release_fuel_covers_the_widest_scan_and_the_widest_output() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    let broker = broker(component, RELEASE_FUEL).await?;
+    let documents = widest_documents();
+
+    // Maximum decoded aggregate scanned end to end with no match at all.
+    let scanned = broker
+        .invoke(
+            "ripgrep.search",
+            json!({"documents": documents, "pattern": "z", "mode": "fixed"}),
+        )
+        .await?;
+    assert_eq!(scanned["selected_count"], 0);
+    assert_eq!(scanned["results"], json!([]));
+
+    // The same aggregate returned as six complete records: a roughly 770 KiB compact response,
+    // and the rationale for the bounded release fuel ceiling. The host's own 1 MiB output bound
+    // is what makes this succeeding an assertion rather than an observation.
+    let widest = broker
+        .invoke(
+            "ripgrep.search",
+            json!({"documents": documents, "pattern": "a+", "max_results": 6}),
+        )
+        .await?;
+    assert_eq!(widest["selected_count"], 6);
+    let results = widest["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 6);
+    for result in results {
+        assert_eq!(
+            result["text"].as_str().expect("record text").len(),
+            MAX_DOCUMENT_TEXT_BYTES
+        );
+    }
+    assert_eq!(widest["truncated"], false);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_far_smaller_budget_still_binds_the_widest_scan() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    // 1M fuel against 786,432 bytes of ripgrep scanning: the ceiling is real, and the host — not
+    // the guest — stops the invocation.
+    let broker = broker(component, 1_000_000).await?;
+    let failure = broker
+        .invoke(
+            "ripgrep.search",
+            json!({"documents": widest_documents(), "pattern": "z", "mode": "fixed"}),
+        )
+        .await
+        .expect_err("the widest scan cannot complete on 1,000,000 fuel");
+    assert!(failure.provider_failure().is_none());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn disjoint_context_fits_inside_ten_million_fuel() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    // 25 selected lines with disjoint eight-line context on each side: 409 output records from an
+    // 818-byte document. This is the review regression that previously exhausted 10,000,000 fuel.
+    let mut text = String::new();
+    for selected in 0..25 {
+        text.push_str("m\n");
+        if selected != 24 {
+            for _ in 0..16 {
+                text.push_str("c\n");
+            }
+        }
+    }
+    assert_eq!(text.len(), 818);
+
+    let broker = broker(component, 10_000_000).await?;
+    let output = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "limits/context", "text": text}],
+                "pattern": "m",
+                "mode": "fixed",
+                "context": {"before": 8, "after": 8},
+                "max_results": 25
+            }),
+        )
+        .await?;
+    assert_eq!(output["selected_count"], 25);
+    assert_eq!(output["results"].as_array().expect("results").len(), 409);
+    assert_eq!(output["truncated"], false);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thousand_results_fit_inside_thirty_million_fuel() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    let broker = broker(component, 30_000_000).await?;
+    let output = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "limits/thousand", "text": "x\n".repeat(1_000)}],
+                "pattern": "x",
+                "mode": "fixed",
+                "max_results": 1_000
+            }),
+        )
+        .await?;
+    assert_eq!(output["selected_count"], 1_000);
+    assert_eq!(output["results"].as_array().expect("results").len(), 1_000);
+    assert_eq!(output["truncated"], false);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_multiline_block_and_dense_matching_stay_bounded() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    let broker = broker(component, RELEASE_FUEL).await?;
+
+    // One explicit match across LF spanning a full 32 KiB block.
+    let multiline = format!("a{}z\n", "m".repeat(32_765));
+    let block = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "limits/multiline", "text": multiline}],
+                "pattern": "(?s:a.*z)",
+                "multiline": true,
+                "max_results": 1
+            }),
+        )
+        .await?;
+    assert_eq!(block["selected_count"], 1);
+    assert_eq!(
+        block["results"][0]["text"].as_str().expect("text").len(),
+        32_768
+    );
+    assert_eq!(block["results"][0]["byte_start"], 0);
+    assert_eq!(block["results"][0]["byte_end"], 32_768);
+
+    // Dense matching must stop submatch enumeration after observing the 65th occurrence.
+    let dense = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "limits/dense", "text": "a".repeat(32_768)}],
+                "pattern": "a",
+                "max_results": 1
+            }),
+        )
+        .await?;
+    assert_eq!(dense["selected_count"], 1);
+    assert_eq!(
+        dense["results"][0]["submatches"]
+            .as_array()
+            .expect("submatches")
+            .len(),
+        64
+    );
+    assert_eq!(dense["results"][0]["submatches_truncated"], true);
+    assert_eq!(dense["truncation_reasons"], json!(["max_submatches"]));
     Ok(())
 }
