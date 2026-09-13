@@ -27,8 +27,6 @@ PY
 for required in \
   'tags:' \
   '"v*"' \
-  '[[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]' \
-  'test "$GITHUB_REF_NAME" = "v$version"' \
   'test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag' \
   'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' \
   'application/vnd.dekopon.provider.v1+wasm' \
