@@ -20,8 +20,8 @@ assert_exact() {
   }
 }
 assert_exact clap 4.6.6
-assert_exact dekopon-provider-sdk 0.13.0
-assert_exact dekopon-provider-sdk-testkit 0.13.0
+assert_exact dekopon-provider-sdk 0.15.0
+assert_exact dekopon-provider-sdk-testkit 0.15.0
 assert_exact grep-matcher 0.1.9
 assert_exact grep-regex 0.1.14
 assert_exact grep-searcher 0.1.17
@@ -35,7 +35,7 @@ cargo tree --locked --manifest-path "$root/Cargo.toml" \
   LC_ALL=C sort -u >"$tree"
 for required in \
   'clap v4.6.6' \
-  'dekopon-provider-sdk v0.13.0' \
+  'dekopon-provider-sdk v0.15.0' \
   'grep-matcher v0.1.9' \
   'grep-regex v0.1.14' \
   'grep-searcher v0.1.17' \

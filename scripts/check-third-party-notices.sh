@@ -33,7 +33,7 @@ require_locked grep-searcher 0.1.17
 require_locked encoding_rs 0.8.35
 require_locked foldhash 0.2.0
 require_locked unicode-ident 1.0.24
-require_locked dekopon-provider-sdk 0.13.0
+require_locked dekopon-provider-sdk 0.15.0
 require_locked serde 1.0.229
 require_locked serde_json 1.0.151
 require_locked clap 4.6.6

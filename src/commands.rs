@@ -174,6 +174,7 @@ fn dispatch(
     Ok(CommandInvocation {
         capability: SEARCH.parse().expect("static capability ID"),
         input: rg.input(text),
+        secret_use: None,
     })
 }
 

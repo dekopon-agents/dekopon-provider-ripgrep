@@ -37,8 +37,8 @@ WHATWG notice is reproduced verbatim below.
 
 ## Dekopon component interface
 
-The component uses `dekopon-provider-sdk 0.13.0`, with `dekopon-core 0.13.0` and
-`dekopon-capability 0.13.0`, under MIT OR Apache-2.0. Its generated component bindings use
+The component uses `dekopon-provider-sdk 0.15.0`, with `dekopon-core 0.15.0` and
+`dekopon-capability 0.15.0`, under MIT OR Apache-2.0. Its generated component bindings use
 `wit-bindgen 0.62.0` and the Wasm/WIT 0.259.0 toolchain crates, under Apache-2.0 WITH
 LLVM-exception OR Apache-2.0 OR MIT. The release component has zero imports.
 
@@ -46,7 +46,7 @@ The `rg` command word parses argv with the SDK's `clap` feature: `clap 4.6.6`, `
 `clap_lex 1.1.0`, and `anstyle 1.0.14` are linked, and the `clap_derive 4.6.4` procedure macro runs
 at build time, all under MIT OR Apache-2.0.
 
-`dekopon-provider-sdk-testkit 0.13.0`, Tokio, Wasmtime, HTTP-host, and storage-host packages occur
+`dekopon-provider-sdk-testkit 0.15.0`, Tokio, Wasmtime, HTTP-host, and storage-host packages occur
 only in native development/test resolution. They are not linked into `ripgrep-provider.wasm`; the
 component-target tree and decoded WIT gates enforce that distinction.
 

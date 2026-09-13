@@ -100,7 +100,11 @@ async fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() 
     assert_eq!(stdout, "");
     assert!(stderr.contains("'--glob'"), "{stderr}");
 
-    let CommandRunOutcome::Proposed { capability, input } = broker
+    let CommandRunOutcome::Proposed {
+        capability,
+        input,
+        secret_use: _,
+    } = broker
         .run_command(
             "rg",
             &argv(&["-i", "-A", "1", "ALPHA", "notes/todo.md"]),
