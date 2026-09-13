@@ -37,7 +37,9 @@ sdk_manifest=$(jq -er '
   select(.name == "dekopon-provider-sdk" and .version == "0.13.0") |
   .manifest_path
 ' <<<"$metadata")
-cmp "$(dirname "$sdk_manifest")/wit/provider.wit" "$root/wit/provider.wit"
+cmp "$(dirname "$sdk_manifest")/wit/provider.wit" "$root/wit/deps/provider.wit"
+# The world this component declares is the CLI world, so the component must export `run-command`.
+grep -Fq 'include dekopon:provider/provider-cli@0.3.0;' "$root/wit/provider.wit"
 
-printf 'component valid: zero imports, describe/invoke only, %s bytes, sha256 %s\n' \
+printf 'component valid: zero imports, describe/invoke/run-command only, %s bytes, sha256 %s\n' \
   "$size" "$(sha256_file "$component")"

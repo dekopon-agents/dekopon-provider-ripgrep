@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+- Add the `rg` command word, exported through `run-command` in the `provider-cli` world. It parses
+  ripgrep's own spellings for exactly what `ripgrep.search` accepts — `-F`, `-i`, `-S`, `-s`, `-w`,
+  `-x`, `-U`, `-v`, `-A`, `-B`, `-C`, `-m` — over the text piped into the word, with an optional
+  `PATH` that only labels that text. Help and usage errors render in the guest at status 0 and 2;
+  every other ripgrep flag is a usage error naming it. `invoke` and its closed input are unchanged.
+- Declare `commandWords: ["rg"]` in the manifest. A Dekopon release after 0.13.0 refuses a provider
+  with capabilities and no command word.
+- Generate this crate's own bindings with `wit-bindgen 0.62.0` for a local `provider` world that
+  includes `dekopon:provider/provider-cli@0.3.0`; the verbatim SDK WIT moves to
+  `wit/deps/provider.wit`. The export glue expands in this crate, so `unsafe_code` is `deny` with
+  the two generated modules exempt, rather than `forbid`.
+- The component and raw-host gates now require the `run-command` export, and the raw gate drives
+  `rg --help` and one piped proposal through Wasmtime.
+
 ## 0.2.0
 
 - Move to `dekopon-provider-sdk 0.13.0` and `dekopon:provider@0.3.0`, and rebuild the component.

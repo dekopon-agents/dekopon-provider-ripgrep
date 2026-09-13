@@ -60,7 +60,7 @@ CARGO_ENCODED_RUSTFLAGS="$encoded_rustflags" \
     --target wasm32-unknown-unknown \
     --release \
     -- \
-    -C metadata=dekopon-ripgrep-provider-0.2.0-repro-v1 \
+    -C metadata=dekopon-ripgrep-provider-0.3.0-repro-v1 \
     -C extra-filename=
 
 test -s "$core"

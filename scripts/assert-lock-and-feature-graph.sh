@@ -19,6 +19,7 @@ assert_exact() {
     exit 1
   }
 }
+assert_exact clap 4.6.6
 assert_exact dekopon-provider-sdk 0.13.0
 assert_exact dekopon-provider-sdk-testkit 0.13.0
 assert_exact grep-matcher 0.1.9
@@ -27,17 +28,20 @@ assert_exact grep-searcher 0.1.17
 assert_exact serde 1.0.229
 assert_exact serde_json 1.0.151
 assert_exact tokio 1.49.0
+assert_exact wit-bindgen 0.62.0
 
 cargo tree --locked --manifest-path "$root/Cargo.toml" \
   --target wasm32-unknown-unknown --edges normal,build --prefix none --format '{p}' |
   LC_ALL=C sort -u >"$tree"
 for required in \
+  'clap v4.6.6' \
   'dekopon-provider-sdk v0.13.0' \
   'grep-matcher v0.1.9' \
   'grep-regex v0.1.14' \
   'grep-searcher v0.1.17' \
   'serde v1.0.229' \
-  'serde_json v1.0.151'; do
+  'serde_json v1.0.151' \
+  'wit-bindgen v0.62.0'; do
   grep -Fxq "$required" "$tree" || {
     echo "error: component graph omits $required" >&2
     exit 1

@@ -18,7 +18,7 @@ raw_invoke() {
 
 description=$(wasmtime run --invoke 'describe()' "$component" | jq -r .)
 jq -e '
-  .id == "ripgrep" and .commandWords == [] and
+  .id == "ripgrep" and .commandWords == ["rg"] and
   [.capabilities[].id] == ["ripgrep.search"]
 ' <<<"$description" >/dev/null
 
@@ -48,6 +48,26 @@ jq -e '
 unknown='{"documents":[{"path":"raw","text":"hit"}],"pattern":"hit","unknown":true}'
 raw_invoke ripgrep.search "$unknown" | jq -e '
   .outcome == "failed" and .error.code == "invalid-input"
+' >/dev/null
+
+# `run-command` is the raw export behind the `rg` word: help renders in the guest, and a piped
+# search becomes a `ripgrep.search` proposal that the invoke export accepts unchanged.
+# Wasmtime prints the result as a WAVE string, which escapes every apostrophe as \' where JSON has
+# no such escape; the help page has one, so it is unescaped before jq decodes the string.
+raw_run() {
+  wasmtime run --invoke "run-command($1,$2)" "$component" | sed "s/\\\\'/'/g" | jq -r .
+}
+raw_run '["--help"]' none | jq -e '
+  .outcome == "rendered" and .status == 0 and .stderr == "" and
+  (.stdout | contains("Usage: rg [OPTIONS] <PATTERN> [PATH]"))
+' >/dev/null
+proposal=$(raw_run '["-i", "HIT"]' 'some("hit\n")')
+jq -e '
+  .outcome == "proposed" and .capability == "ripgrep.search" and
+  .input == {"documents": [{"path": "<stdin>", "text": "hit\n"}], "pattern": "HIT", "case": "insensitive"}
+' <<<"$proposal" >/dev/null
+raw_invoke ripgrep.search "$(jq -c .input <<<"$proposal")" | jq -e '
+  .outcome == "succeeded" and .output.selected_count == 1
 ' >/dev/null
 
 printf 'raw component SDK-boundary tests passed\n'

@@ -120,5 +120,7 @@
       }
     }
   ],
-  "commandWords": []
+  "commandWords": [
+    "rg"
+  ]
 }

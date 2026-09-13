@@ -85,6 +85,46 @@ Each limit is probed once beyond its boundary. Only complete deterministic prefi
 context is never emitted without a retained selected record. Truncation reasons always use this
 order: `max_results`, `max_output_bytes`, `max_submatches`.
 
+## Command word: `rg`
+
+The provider contributes `rg` to Dekopon's sandboxed shell. It is ripgrep's command line over the
+text piped into it — the shell has no filesystem, and the component could not open one anyway:
+
+```console
+$ cat notes | rg -i -C 1 todo
+$ rg --help
+```
+
+```text
+rg [OPTIONS] <PATTERN> [PATH]
+```
+
+`PATH` is never opened; it names the piped text in the results and defaults to `<stdin>` (`-` means
+the same). A well-formed argv becomes one `ripgrep.search` proposal, authorized exactly like a
+direct call, carrying only the members a flag set:
+
+| Flag | Input member |
+|---|---|
+| `-F`, `--fixed-strings` | `"mode": "fixed"` |
+| `-i`, `--ignore-case` | `"case": "insensitive"` |
+| `-S`, `--smart-case` | `"case": "smart"` |
+| `-s`, `--case-sensitive` | `"case": "sensitive"` |
+| `-w`, `--word-regexp` | `"word": true` |
+| `-x`, `--line-regexp` | `"line": true` |
+| `-U`, `--multiline` | `"multiline": true` |
+| `-v`, `--invert-match` | `"invert": true` |
+| `-A`, `--after-context NUM` | `"context": {"before": …, "after": NUM}` |
+| `-B`, `--before-context NUM` | `"context": {"before": NUM, "after": …}` |
+| `-C`, `--context NUM` | both sides; `-A`/`-B` override their side |
+| `-m`, `--max-count NUM` | `"max_results": NUM` |
+
+As in ripgrep, the last of `-i`/`-S`/`-s` wins and a repeated flag takes its last value. Context
+counts are checked against 0–8 and `-m` against 1–1,000 before anything is proposed. `--help` and
+`--version` render on stdout at status 0; a missing pattern, a bad count, or any other ripgrep flag
+(`-g`, `--glob`, `-e`, `-r`, `--json`, `--max-filesize`, …) renders clap's usage error on stderr at
+status 2. Nothing piped in is a usage decline. `--` ends the options, so `rg -- -foo` searches for
+`-foo`.
+
 ## Run it
 
 Obtain `ripgrep-provider.wasm` and `ripgrep-provider.wasm.sha256` from the immutable release, whose
@@ -171,11 +211,12 @@ components are rejected.
 
 ## This is not the `rg` CLI
 
-The provider intentionally does **not** implement filesystem discovery, path lookup, directory
-walking, globs, file types, ignore files, hidden-file rules, encodings/transcoding, BOM stripping,
-binary detection, mmap, network access, replacement, archive search, config files, command words,
-PCRE2, or full `rg` command-line compatibility. It imports neither `grep-printer`, `ignore`, nor
-`globset`. Supply already selected UTF-8 text and consume structured JSON results.
+The `rg` word borrows ripgrep's spellings, not its program. The provider intentionally does **not**
+implement filesystem discovery, path lookup, directory walking, globs, file types, ignore files,
+hidden-file rules, encodings/transcoding, BOM stripping, binary detection, mmap, network access,
+replacement, archive search, config files, PCRE2, printed `rg` output, or full `rg` command-line
+compatibility. It imports neither `grep-printer`, `ignore`, nor `globset`. Supply already selected
+UTF-8 text and consume structured JSON results.
 
 ## Build and validate
 

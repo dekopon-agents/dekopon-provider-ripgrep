@@ -2,7 +2,7 @@
 
 [package]
 name = "dekopon-ripgrep-provider"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
@@ -14,12 +14,18 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dekopon-provider-sdk = "=0.13.0"
+# `clap` is the SDK's argv layer for the `rg` command word: help, version, and usage errors are
+# rendered by the guest, built without `color` or `env`.
+dekopon-provider-sdk = { version = "=0.13.0", features = ["clap"] }
 grep-matcher = { version = "=0.1.9", default-features = false }
 grep-regex = { version = "=0.1.14", default-features = false }
 grep-searcher = { version = "=0.1.17", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
+# `export_provider_with_cli!` needs this crate's own bindings for the `provider-cli` world. 0.62.0 is
+# the version the SDK generates its bindings with; two wit-bindgen runtimes in one component would
+# define `cabi_realloc` twice.
+wit-bindgen = { version = "=0.62.0", default-features = false, features = ["macros", "realloc"] }
 
 [dev-dependencies]
 dekopon-provider-sdk-testkit = "=0.13.0"
@@ -28,7 +34,9 @@ dekopon-provider-sdk-testkit = "=0.13.0"
 tokio = { version = "=1.49.0", features = ["macros", "rt-multi-thread"] }
 
 [lints.rust]
-unsafe_code = "forbid"
+# `deny`, not `forbid`: wit-bindgen's export glue is `unsafe` by construction and now expands in this
+# crate, so `src/lib.rs` allows it on exactly the two generated modules. No handwritten `unsafe`.
+unsafe_code = "deny"
 
 [lints.rustdoc]
 broken_intra_doc_links = "deny"
