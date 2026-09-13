@@ -36,6 +36,10 @@ require_locked unicode-ident 1.0.24
 require_locked dekopon-provider-sdk 0.13.0
 require_locked serde 1.0.229
 require_locked serde_json 1.0.151
+require_locked clap 4.6.6
+require_locked clap_builder 4.6.6
+require_locked clap_lex 1.1.0
+require_locked wit-bindgen 0.62.0
 
 for phrase in \
   'Cargo.lock is the authority' \

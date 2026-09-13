@@ -4,6 +4,7 @@ use dekopon_provider_sdk::{
 use serde_json::{Value, json};
 
 use crate::{
+    COMMAND_WORD, SEARCH,
     input::{
         DEFAULT_MAX_RESULTS, MAX_CONTEXT_LINES, MAX_DOCUMENT_TEXT_BYTES, MAX_DOCUMENTS,
         MAX_PATH_BYTES, MAX_PATTERN_BYTES, MAX_RESULTS, MAX_TOTAL_TEXT_BYTES, MIN_DOCUMENTS,
@@ -17,11 +18,9 @@ pub(crate) fn manifest() -> ProviderManifest {
         id: "ripgrep".parse().expect("static provider identifier"),
         description: "Searches bounded caller-supplied UTF-8 virtual documents with Rust ripgrep matchers; never reads paths or performs I/O"
             .to_owned(),
-        command_words: Vec::new(),
+        command_words: vec![COMMAND_WORD.to_owned()],
         capabilities: vec![ProviderCapability {
-            id: "ripgrep.search"
-                .parse()
-                .expect("static capability identifier"),
+            id: SEARCH.parse().expect("static capability identifier"),
             description: "Search 1–16 virtual documents in caller order with bounded regex/fixed matching, context, byte offsets, and deterministic truncation"
                 .to_owned(),
             effect: EffectKind::ReadOnly,
@@ -144,7 +143,7 @@ mod tests {
     fn manifest_surface_and_schema_are_exactly_narrow() {
         let manifest = manifest();
         assert_eq!(manifest.id.as_str(), "ripgrep");
-        assert!(manifest.command_words.is_empty());
+        assert_eq!(manifest.command_words, vec!["rg".to_owned()]);
         assert_eq!(manifest.capabilities.len(), 1);
         let capability = &manifest.capabilities[0];
         assert_eq!(capability.id.as_str(), "ripgrep.search");

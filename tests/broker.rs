@@ -7,7 +7,9 @@
 
 use std::path::PathBuf;
 
-use dekopon_provider_sdk_testkit::{BrokerHostLimits, FakeBroker, FakeBrokerError};
+use dekopon_provider_sdk_testkit::{
+    BrokerHostLimits, CommandRunOutcome, FakeBroker, FakeBrokerError,
+};
 use serde_json::{Value, json};
 
 /// The fuel a release deployment supplies, and the ceiling every bounded workload below fits in.
@@ -54,6 +56,67 @@ fn widest_documents() -> Value {
             .map(|index| json!({"path": format!("limits/d{index}"), "text": text}))
             .collect(),
     )
+}
+
+fn argv(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| (*word).to_owned()).collect()
+}
+
+/// The `rg` word through the broker's own host: help and a usage error render in the guest, and a
+/// piped search proposes exactly the input `invoke` then runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() -> TestResult {
+    let Some(component) = component() else {
+        return Ok(());
+    };
+    let broker = broker(component, RELEASE_FUEL).await?;
+
+    let CommandRunOutcome::Rendered {
+        stdout,
+        stderr,
+        status,
+    } = broker.run_command("rg", &argv(&["--help"]), None).await?
+    else {
+        panic!("rg --help renders");
+    };
+    assert_eq!(status, 0);
+    assert!(
+        stdout.contains("Usage: rg [OPTIONS] <PATTERN> [PATH]"),
+        "{stdout}"
+    );
+    assert_eq!(stderr, "");
+
+    let CommandRunOutcome::Rendered {
+        stdout,
+        stderr,
+        status,
+    } = broker
+        .run_command("rg", &argv(&["--glob", "*.rs", "alpha"]), Some("alpha\n"))
+        .await?
+    else {
+        panic!("an unsupported ripgrep flag renders a usage error");
+    };
+    assert_eq!(status, 2);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("'--glob'"), "{stderr}");
+
+    let CommandRunOutcome::Proposed { capability, input } = broker
+        .run_command(
+            "rg",
+            &argv(&["-i", "-A", "1", "ALPHA", "notes/todo.md"]),
+            Some("alpha\nbeta\ngamma\n"),
+        )
+        .await?
+    else {
+        panic!("a piped search proposes");
+    };
+    assert_eq!(capability.as_str(), "ripgrep.search");
+    let output = broker.invoke(capability.as_str(), input).await?;
+    assert_eq!(output["selected_count"], 1);
+    assert_eq!(output["results"][0]["path"], "notes/todo.md");
+    assert_eq!(output["results"][1]["kind"], "context_after");
+    assert_eq!(output["results"][1]["text"], "beta\n");
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -448,8 +448,9 @@ jobs:
           to \`ripgrep-provider.wasm\`; verify it with the attached SHA-256 file.
 
           Limitations: no filesystem/path discovery, directories, globs, types, ignore files,
-          encodings/transcoding, mmap, network, replacement, archives, config files, command words,
-          PCRE2, or full rg CLI compatibility. Duplicate JSON object names use serde_json's
+          encodings/transcoding, mmap, network, replacement, archives, config files, PCRE2, or
+          full rg CLI compatibility; the \`rg\` command word searches only piped text.
+          Duplicate JSON object names use serde_json's
           last-value-wins behavior. Host wire limits are separate from decoded provider limits.
           No latest or temporary tag is published. The binary distribution license expression is
           **(MIT OR Apache-2.0) AND BSD-3-Clause**.

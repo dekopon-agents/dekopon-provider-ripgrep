@@ -12,8 +12,13 @@ and never by replacing bytes already published under an existing one.
 `ripgrep.search` processes only caller-supplied `serde_json::Value` data. A document path is an
 opaque label and is never dereferenced. Handwritten provider code performs no filesystem, path
 lookup, directory walk, mmap, network, HTTP, storage, subprocess, environment, clock, random, WASI,
-or JavaScript operation. The decoded component WIT has no imports and exports exactly `describe`
-and `invoke`; `commandWords` is empty.
+or JavaScript operation. The decoded component WIT has no imports and exports exactly `describe`,
+`invoke`, and `run-command`; `commandWords` is `["rg"]`.
+
+`run-command` is the `rg` word. It reads only its argv and the value piped into it, and either
+renders clap's help, version, or usage text — which authorizes nothing — or returns a
+`ripgrep.search` proposal that the broker authorizes exactly as a direct call. `PATH` is a label for
+the piped text, never dereferenced.
 
 The security boundary is the validated component plus a correctly configured Dekopon host:
 
@@ -29,10 +34,10 @@ reviewed component digest and keep its Wasmtime compilation cache owner-writable
 
 ## JSON boundary
 
-`export_provider!` parses the entire WIT `input-json` string into `serde_json::Value` before
-`Provider::invoke`. Malformed JSON and trailing non-whitespace are rejected by that SDK adapter.
-The provider then deserializes closed `deny_unknown_fields` models and validates decoded bytes and
-numeric ranges.
+`export_provider_with_cli!` parses the entire WIT `input-json` string into `serde_json::Value`
+before `Provider::invoke`. Malformed JSON and trailing non-whitespace are rejected by that SDK
+adapter. The provider then deserializes closed `deny_unknown_fields` models and validates decoded
+bytes and numeric ranges.
 
 Duplicate object names cannot be detected after parsing to `Value`. `serde_json` retains the last
 value. This is documented behavior, tested at the raw component boundary, and is not represented as
@@ -67,10 +72,11 @@ document paths, patterns, and text are never reflected into provider error messa
 
 ## Supply chain and release
 
-`Cargo.lock` pins every transitive version/checksum. Direct SDK, ripgrep, Serde, and testkit pins are
-exact. `cargo-deny` limits registries, licenses, advisories, and forbidden packages. CI rejects any
-tracked `*.wasm`, validates both core and component modules, proves zero imports, checks decoded WIT,
-and enforces the 2,000,000-byte component ceiling. All third-party Actions are full commit SHAs.
+`Cargo.lock` pins every transitive version/checksum. Direct SDK, ripgrep, Serde, wit-bindgen, and
+testkit pins are exact. `cargo-deny` limits registries, licenses, advisories, and forbidden
+packages. CI rejects any tracked `*.wasm`, validates both core and component modules, proves zero
+imports, checks decoded WIT, and enforces the 2,000,000-byte component ceiling. All third-party
+Actions are full commit SHAs.
 
 The release workflow:
 
