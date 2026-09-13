@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0
+
+- Move to `dekopon-provider-sdk 0.15.0`. `CommandInvocation` gains `secret_use`, named `None` at the
+  one call site that builds one by hand; this provider proposes no secret use. `run_command` and
+  `export_provider_with_cli!` are otherwise unchanged.
+- Delete `.github/workflows/recover-v0.1.0.yml`, a one-shot `workflow_dispatch` recovery job pinned
+  to the exact run/job/asset IDs of the original `v0.1.0` release incident and to the toolchain it
+  used (Rust 1.97.0, wasm-tools 1.236.1); `ci.yml` and `release.yml` are unaffected. Drop the
+  matching "residual finalizer" gates from `scripts/validate-workflows.sh` along with it — they
+  existed only to pin that file's byte-for-byte content — and keep the CI/release SHA-pinning,
+  interlock, and OCI-verifier self-test gates.
+- Update `scripts/assert-lock-and-feature-graph.sh`, `scripts/check-third-party-notices.sh`,
+  `scripts/inspect-component.sh`, and `THIRD_PARTY_NOTICES.md` to require and describe
+  `dekopon-provider-sdk`/`dekopon-provider-sdk-testkit` 0.15.0 rather than 0.13.0. The vendored
+  `dekopon:provider/provider-cli@0.3.0` WIT text is unchanged.
+
 ## 0.3.0
 
 - Add the `rg` command word, exported through `run-command` in the `provider-cli` world. It parses
