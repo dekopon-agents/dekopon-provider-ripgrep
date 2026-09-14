@@ -129,9 +129,8 @@ status 2. Nothing piped in is a usage decline. `--` ends the options, so `rg -- 
 
 Obtain `ripgrep-provider.wasm` and `ripgrep-provider.wasm.sha256` from the immutable release, whose
 bytes are the sole layer at `ghcr.io/dekopon-agents/provider-ripgrep:<version>`. No `latest` tag is
-published. The Wasm embeds the complete distribution-license bundle in its
-`dekopon.third-party-notices` custom section; the GitHub release documentation reproduces that
-byte-exact bundle.
+published. The release's SBOM asset, not an embedded custom section, is now the license
+disclosure.
 
 Verify the checksum, install the component in `dekopon-brokerd`, and grant `ripgrep.search`. The
 broker — not the component — owns authorization and every host resource ceiling, so an authorized
@@ -151,8 +150,8 @@ $ sha256sum --check ripgrep-provider.wasm.sha256
 
 To drive the component without a deployment, load it with `FakeBroker` from
 [`dekopon-provider-sdk-testkit`](https://docs.rs/dekopon-provider-sdk-testkit): the same Wasmtime
-host, the same limits, no policy. `tests/broker.rs` is that harness and
-`./scripts/test-broker-testkit.sh` runs it against a freshly built component.
+host, the same limits, no policy. `tests/broker.rs` is that harness; build the component (see
+below), then run `cargo test` with `DEKOPON_PROVIDER_COMPONENT` set to its path.
 
 ## Limits and JSON boundary
 
@@ -229,19 +228,19 @@ rustup toolchain install 1.98.1 --profile minimal --component clippy --component
 rustup target add wasm32-unknown-unknown --toolchain 1.98.1
 cargo +1.98.1 install wasm-tools --version 1.259.0 --locked
 cargo +1.98.1 install wasmtime-cli --version 48.0.2 --locked
-./scripts/validate.sh
-./scripts/reproducible-build.sh
+../provider-workflows/build.sh
 ```
 
-`validate.sh` runs formatting, warnings-denied clippy, native/adversarial tests, Wasm target
-checks, license/source policy, component validation, import/WIT/size inspection, raw SDK boundary
-tests under the Wasmtime CLI, and the FakeBroker component-host gate covering concurrent storage-free
-invocation, the host wire bound, and every fuel and resource limit. See
-[`SECURITY.md`](SECURITY.md) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+`../provider-workflows/build.sh` (cloned next to this checkout) builds the reproducible component.
+Formatting, warnings-denied clippy, native/adversarial tests, license/source policy, component
+validation, and the FakeBroker component-host gate covering concurrent storage-free invocation,
+the host wire bound, and every fuel and resource limit all run in the shared
+[`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) CI.
+See [`SECURITY.md`](SECURITY.md).
 
 ## License
 
 Project-authored source is available under MIT OR Apache-2.0. Because the component contains
 WHATWG-derived `encoding_rs` data, its binary distribution expression is
-`(MIT OR Apache-2.0) AND BSD-3-Clause`. See `LICENSE-MIT`, `LICENSE-APACHE`, and
-`THIRD_PARTY_NOTICES.md`; the build and release gates verify the exact embedded notice bundle.
+`(MIT OR Apache-2.0) AND BSD-3-Clause`. See `LICENSE-MIT` and `LICENSE-APACHE`; the release's SBOM
+asset discloses every dependency's license.
