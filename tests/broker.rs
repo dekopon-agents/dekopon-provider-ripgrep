@@ -1,14 +1,13 @@
 //! Component-host gates: the compiled provider driven by the real broker host.
 //!
-//! Every case here needs the release artifact, so each returns early when
-//! `DEKOPON_RIPGREP_COMPONENT` is unset. `scripts/test-broker-testkit.sh` sets it after
-//! `scripts/build-component.sh` has produced the ignored component, which is the only way these
-//! bodies execute.
+//! Every case here needs the release artifact. `DEKOPON_PROVIDER_COMPONENT` is required and must
+//! point at a freshly built component; the shared `provider-workflows` CI builds it before
+//! running this suite.
 
 use std::path::PathBuf;
 
 use dekopon_provider_sdk_testkit::{
-    BrokerHostLimits, CommandRunOutcome, FakeBroker, FakeBrokerError,
+    BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome, FakeBroker, FakeBrokerError,
 };
 use serde_json::{Value, json};
 
@@ -20,8 +19,11 @@ const MAX_DOCUMENT_TEXT_BYTES: usize = 131_072;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn component() -> Option<PathBuf> {
-    std::env::var_os("DEKOPON_RIPGREP_COMPONENT").map(PathBuf::from)
+fn component() -> PathBuf {
+    PathBuf::from(
+        std::env::var_os("DEKOPON_PROVIDER_COMPONENT")
+            .expect("DEKOPON_PROVIDER_COMPONENT must point at the built component"),
+    )
 }
 
 fn cache_directory() -> Result<PathBuf, std::io::Error> {
@@ -66,9 +68,7 @@ fn argv(words: &[&str]) -> Vec<String> {
 /// piped search proposes exactly the input `invoke` then runs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     let broker = broker(component, RELEASE_FUEL).await?;
 
     let CommandRunOutcome::Rendered {
@@ -125,9 +125,7 @@ async fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_invocations_need_no_storage_and_the_host_bounds_the_wire() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     let defaults = BrokerHostLimits::default();
     assert_eq!(defaults.max_memory_bytes, 64 * 1024 * 1024);
     assert_eq!(defaults.max_input_bytes, 1_048_576);
@@ -213,9 +211,7 @@ async fn concurrent_invocations_need_no_storage_and_the_host_bounds_the_wire() -
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn release_fuel_covers_the_widest_scan_and_the_widest_output() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     let broker = broker(component, RELEASE_FUEL).await?;
     let documents = widest_documents();
 
@@ -253,9 +249,7 @@ async fn release_fuel_covers_the_widest_scan_and_the_widest_output() -> TestResu
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_far_smaller_budget_still_binds_the_widest_scan() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     // 1M fuel against 786,432 bytes of ripgrep scanning: the ceiling is real, and the host — not
     // the guest — stops the invocation.
     let broker = broker(component, 1_000_000).await?;
@@ -272,9 +266,7 @@ async fn a_far_smaller_budget_still_binds_the_widest_scan() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn disjoint_context_fits_inside_ten_million_fuel() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     // 25 selected lines with disjoint eight-line context on each side: 409 output records from an
     // 818-byte document. This is the review regression that previously exhausted 10,000,000 fuel.
     let mut text = String::new();
@@ -309,9 +301,7 @@ async fn disjoint_context_fits_inside_ten_million_fuel() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_thousand_results_fit_inside_thirty_million_fuel() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     let broker = broker(component, 30_000_000).await?;
     let output = broker
         .invoke(
@@ -332,9 +322,7 @@ async fn a_thousand_results_fit_inside_thirty_million_fuel() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_multiline_block_and_dense_matching_stay_bounded() -> TestResult {
-    let Some(component) = component() else {
-        return Ok(());
-    };
+    let component = component();
     let broker = broker(component, RELEASE_FUEL).await?;
 
     // One explicit match across LF spanning a full 32 KiB block.
@@ -379,5 +367,72 @@ async fn one_multiline_block_and_dense_matching_stay_bounded() -> TestResult {
     );
     assert_eq!(dense["results"][0]["submatches_truncated"], true);
     assert_eq!(dense["truncation_reasons"], json!(["max_submatches"]));
+    Ok(())
+}
+
+/// Carries the raw SDK-boundary assertions formerly made by `scripts/test-raw-component.sh`
+/// against a real Wasmtime CLI invocation: `describe()` names the provider, its capability, and
+/// its command word; a small in-memory search invoke matches; a closed-schema violation is
+/// rejected as `invalid-input`; and the `rg` word's `--help` renders usage text. The script's own
+/// truncated-JSON and duplicate-key cases exercise the raw WIT `input-json` string boundary, which
+/// has no equivalent in this typed `serde_json::Value` API — the unknown-member case below is the
+/// script's other invalid-input fixture, and it does exercise the same provider-side rejection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn raw_smoke_describe_search_invalid_input_and_help_text() -> TestResult {
+    let component = component();
+
+    let registry =
+        BrokerProviderRegistry::load([component.clone()], BrokerHostLimits::default()).await?;
+    let manifests: Vec<_> = registry.manifests().collect();
+    assert_eq!(manifests.len(), 1);
+    assert_eq!(manifests[0].id.as_str(), "ripgrep");
+    assert_eq!(manifests[0].command_words, vec!["rg".to_owned()]);
+    let capability_ids: Vec<&str> = manifests[0]
+        .capabilities
+        .iter()
+        .map(|capability| capability.id.as_str())
+        .collect();
+    assert_eq!(capability_ids, vec!["ripgrep.search"]);
+
+    let broker = broker(component, RELEASE_FUEL).await?;
+
+    let matched = broker
+        .invoke(
+            "ripgrep.search",
+            json!({"documents": [{"path": "raw", "text": "hit\n"}], "pattern": "hit"}),
+        )
+        .await?;
+    assert_eq!(matched["selected_count"], 1);
+
+    let rejected = broker
+        .invoke(
+            "ripgrep.search",
+            json!({
+                "documents": [{"path": "raw", "text": "hit"}],
+                "pattern": "hit",
+                "unknown": true
+            }),
+        )
+        .await
+        .expect_err("the closed ripgrep.search schema rejects an unknown member");
+    let (code, _) = rejected
+        .provider_failure()
+        .expect("the guest declared this failure");
+    assert_eq!(code, "invalid-input");
+
+    let CommandRunOutcome::Rendered {
+        stdout,
+        stderr,
+        status,
+    } = broker.run_command("rg", &argv(&["--help"]), None).await?
+    else {
+        panic!("rg --help renders");
+    };
+    assert_eq!(status, 0);
+    assert_eq!(stderr, "");
+    assert!(
+        stdout.contains("Usage: rg [OPTIONS] <PATTERN> [PATH]"),
+        "{stdout}"
+    );
     Ok(())
 }
