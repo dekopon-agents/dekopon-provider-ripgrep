@@ -5,6 +5,7 @@
 //! running this suite.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use dekopon_provider_sdk_testkit::{
     BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome, FakeBroker, FakeBrokerError,
@@ -27,10 +28,23 @@ fn component() -> PathBuf {
 }
 
 fn cache_directory() -> Result<PathBuf, std::io::Error> {
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    static NEXT_CACHE: AtomicU64 = AtomicU64::new(0);
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("broker-testkit-compile-cache");
-    std::fs::create_dir_all(&directory)?;
+    std::fs::create_dir_all(&root)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(std::io::Error::other)?
+        .as_nanos();
+    let directory = root.join(format!(
+        "{}-{timestamp}-{}",
+        std::process::id(),
+        NEXT_CACHE.fetch_add(1, Ordering::Relaxed)
+    ));
+    // Independent hosts must not publish into the same cold cache concurrently. Keep each
+    // exclusive directory until target cleanup so it outlives its broker and all invocations.
+    std::fs::create_dir(&directory)?;
     directory.canonicalize()
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.0] - 2026-09-20
+
+- Move to provider SDK 0.18.0, isolate concurrent test hosts' compilation caches, and update
+  the test host's rustls to fix RUSTSEC-2026-0285; no caller-facing behavior changes.
+
 ## 0.4.0
 
 - Move to `dekopon-provider-sdk 0.15.0`. `CommandInvocation` gains `secret_use`, named `None` at the
