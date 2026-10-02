@@ -1,4 +1,5 @@
-//! A bounded, import-free ripgrep provider over caller-supplied virtual documents.
+//! A bounded ripgrep provider over caller-supplied virtual documents.
+//! The SDK's stdio import is mandatory; the search declares no optional imports.
 //!
 //! Paths are opaque labels. Provider code performs no filesystem, network, subprocess, storage,
 //! or host-interface operation; raw wire size, fuel, linear memory, and wall time remain host
@@ -19,7 +20,7 @@ pub(crate) const COMMAND_WORD: &str = "rg";
 /// The single typed provider implementation.
 pub struct RipgrepProvider;
 
-/// Search over bounded virtual documents (RG-b removes the virtual document input).
+/// Search over bounded virtual documents.
 pub struct Search;
 
 impl Provider for RipgrepProvider {
@@ -45,7 +46,6 @@ impl Capability for Search {
     type Error = error::SearchError;
 
     fn run(mut input: Self::Input, (): Self::Needs, out: &mut Stdout) -> Result<(), Self::Error> {
-        // Temporary RG-a CLI bridge: proposal contains a placeholder, not piped bytes.
         if let Some(piped) = provider::stdin() {
             use std::io::Read as _;
             let mut bytes = Vec::new();
@@ -63,7 +63,6 @@ impl Capability for Search {
         }
         input.validate()?;
         let result = search::run(&input)?;
-        // RG-a bridge only: retain JSON document output until RG-b deletes the envelope.
         serde_json::to_writer(out, &result).map_err(|_| error::search_failed())?;
         Ok(())
     }
@@ -82,7 +81,7 @@ mod tests {
     use super::RipgrepProvider;
 
     #[test]
-    fn typed_manifest_is_import_free_and_closed() {
+    fn typed_manifest_is_closed_and_bounds_the_document_bridge() {
         let manifest = provider::manifest::<RipgrepProvider>().expect("typed manifest");
         let snapshot = format!(
             "{}\n",
@@ -99,11 +98,69 @@ mod tests {
         assert_eq!(cap.id.as_str(), "ripgrep.search");
         assert_eq!(cap.risk, RiskLevel::Low);
         assert_eq!(cap.effect, dekopon_provider_sdk::EffectKind::ReadOnly);
-        assert_eq!(cap.input_schema["additionalProperties"], false);
-        assert!(cap.input_schema["properties"]["documents"].is_object());
+        let schema = &cap.input_schema;
+        let fields = &schema["properties"];
+        assert_eq!(schema["additionalProperties"], false);
         assert_eq!(
-            cap.input_schema["properties"]["context"]["additionalProperties"],
-            false
+            schema["required"],
+            serde_json::json!(["documents", "pattern"])
+        );
+        assert_eq!(fields["documents"]["minItems"], 1);
+        assert_eq!(fields["documents"]["maxItems"], 16);
+        assert!(
+            fields["documents"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("aggregate text")
+        );
+        let document = &fields["documents"]["items"];
+        assert_eq!(document["additionalProperties"], false);
+        assert_eq!(document["properties"]["path"]["minLength"], 1);
+        assert_eq!(document["properties"]["path"]["maxLength"], 256);
+        assert!(
+            document["properties"]["path"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("never dereferenced")
+        );
+        assert_eq!(document["properties"]["text"]["maxLength"], 131_072);
+        assert!(
+            document["properties"]["text"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("UTF-8")
+        );
+        assert_eq!(fields["pattern"]["minLength"], 1);
+        assert_eq!(fields["pattern"]["maxLength"], 4096);
+        assert!(
+            fields["pattern"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("PCRE2")
+        );
+        assert_eq!(fields["context"]["additionalProperties"], false);
+        assert_eq!(
+            fields["context"]["required"],
+            serde_json::json!(["before", "after"])
+        );
+        for side in ["before", "after"] {
+            assert_eq!(fields["context"]["properties"][side]["minimum"], 0);
+            assert_eq!(fields["context"]["properties"][side]["maximum"], 8);
+        }
+        assert!(
+            fields["context"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("zero lines")
+        );
+        assert_eq!(fields["max_results"]["minimum"], 1);
+        assert_eq!(fields["max_results"]["maximum"], 1000);
+        assert_eq!(fields["max_results"]["default"], 100);
+        assert!(
+            fields["max_results"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("selected records")
         );
     }
 }

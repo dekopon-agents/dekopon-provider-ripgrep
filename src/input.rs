@@ -37,37 +37,58 @@ pub(crate) enum CaseMode {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Document {
+    /// Opaque relative /-separated label, enforced at 1–256 UTF-8 bytes; never dereferenced. Empty, dot, dot-dot, control, backslash, absolute, drive-prefixed, UNC-like, and empty components are rejected.
+    #[schemars(length(min = 1, max = 256))]
     pub(crate) path: String,
+    /// Decoded UTF-8 virtual content, at most 131072 bytes. LF alone terminates lines; CR and BOM bytes are preserved.
+    #[schemars(length(max = 131_072))]
     pub(crate) text: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Context {
+    #[schemars(range(min = 0, max = 8))]
     pub(crate) before: usize,
+    #[schemars(range(min = 0, max = 8))]
     pub(crate) after: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    description = "Closed semantic input. Runtime limits include 64 submatches per selected result and a 1000000-byte JSON stdout bridge. The host separately enforces the raw serialized invocation limit."
+)]
 pub struct SearchInput {
+    /// Caller-fed virtual documents in search order. Paths must be exact-byte unique. Each text is at most 131072 decoded UTF-8 bytes and aggregate text is at most 786432 decoded UTF-8 bytes.
+    #[schemars(length(min = 1, max = 16))]
     pub(crate) documents: Vec<Document>,
+    /// One Rust-regex pattern or one fixed literal, enforced at 1–4,096 decoded UTF-8 bytes. PCRE2 look-around and backreferences are unsupported.
+    #[schemars(length(min = 1, max = 4096))]
     pub(crate) pattern: String,
+    /// Regex syntax, or one literal fixed string.
     #[serde(default)]
     pub(crate) mode: SearchMode,
     #[serde(default)]
     pub(crate) case: CaseMode,
+    /// Require ripgrep word-boundary matching; cannot be combined with line.
     #[serde(default)]
     pub(crate) word: bool,
+    /// Require a whole LF-delimited line; cannot be combined with word or multiline.
     #[serde(default)]
     pub(crate) line: bool,
+    /// Permit explicit matches across LF. Dot still excludes LF unless the Rust pattern enables s; cannot be combined with line or invert.
     #[serde(default)]
     pub(crate) multiline: bool,
+    /// Select non-matching lines; incompatible with multiline.
     #[serde(default)]
     pub(crate) invert: bool,
+    /// Both counts are required when context is supplied; defaults to zero lines on both sides.
     #[serde(default)]
     pub(crate) context: Context,
+    /// Maximum returned selected records, not occurrences or context records.
     #[serde(default = "default_max_results")]
+    #[schemars(range(min = 1, max = 1000))]
     pub(crate) max_results: usize,
 }
 

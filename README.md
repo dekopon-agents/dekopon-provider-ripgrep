@@ -204,7 +204,7 @@ repeated name. The provider validates the resulting semantic object using closed
 | Compiled regex program | 4 MiB |
 | DFA cache | 2 MiB |
 | Provider success envelope | 1,000,000 serialized bytes |
-| RG-a intermediate typed component | 2,007,815 bytes before final RG-b stream migration |
+| RG-a intermediate typed component | Size recorded by the fresh component build gate; RG-b replaces the bridge |
 
 Path labels must contain nonempty relative `/`-separated components and be exact-byte unique.
 Empty, `.`, `..`, control-containing, backslash, absolute, drive-prefixed, UNC-like, and empty

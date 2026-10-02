@@ -1,4 +1,3 @@
-//! Test-only decoding of the RG-a internal JSON stdout bridge; RG-b deletes this module.
 use dekopon_provider_sdk_testkit::Native;
 use dekopon_ripgrep_provider::RipgrepProvider;
 use serde_json::Value;

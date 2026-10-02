@@ -1,4 +1,3 @@
-//! Real component under the typed SDK/testkit host. RG-a still bridges documents as stdout JSON.
 use dekopon_broker_host::BrokerHostError;
 use dekopon_provider_sdk::{CommandRunOutcome, provider};
 use dekopon_provider_sdk_testkit::{BrokerHostLimits, Harness, HarnessError, conformance};
@@ -91,7 +90,6 @@ fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() -> Tes
     assert!(secret_use.is_none());
     assert_eq!(capability.as_str(), "ripgrep.search");
     assert_eq!(input["documents"][0]["path"], "notes/todo.md");
-    // The 1b testkit has no stdin setter: exercise the same typed input with document text here.
     let output = call(
         json!({"documents":[{"path":"notes/todo.md","text":"alpha\nbeta\ngamma\n"}],
         "pattern":"ALPHA","case":"insensitive","context":{"before":0,"after":1}}),

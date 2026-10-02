@@ -76,7 +76,6 @@ impl Rg {
             Some(path) => path,
         };
         let mut input = Map::new();
-        // RG-a bridge: the text is supplied only when the capability runs, never in a proposal.
         input.insert(
             "documents".to_owned(),
             json!([{"path": path, "text": text}]),
