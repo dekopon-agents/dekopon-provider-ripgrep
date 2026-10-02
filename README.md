@@ -1,13 +1,15 @@
 # Dekopon ripgrep provider
 
-A standalone, import-free WebAssembly component exposing one Low-risk, read-only, idempotent
+A standalone WebAssembly component exposing one Low-risk, read-only, idempotent
 capability: `ripgrep.search`. It uses ripgrep's official `grep-matcher 0.1.9`, `grep-regex 0.1.14`,
 and `grep-searcher 0.1.17` crates to search **only UTF-8 virtual documents supplied by the
 caller**.
 
-A document `path` is an opaque output label. The provider never opens it. The component has zero
-imports and no filesystem, network, storage, HTTP, subprocess, clock, random, WASI, or JavaScript
-authority.
+A document `path` is an opaque output label. The provider never opens it. The typed component
+imports only the SDK's mandatory `dekopon:stdio/streams@0.1.0`, with no optional imports or
+filesystem, network, storage, HTTP, subprocess, clock, random, WASI, or JavaScript authority.
+RG-a temporarily writes the old document result as JSON on stdout; RG-b removes documents and
+writes matching lines from piped stdin.
 
 ## Capability
 
@@ -148,9 +150,9 @@ $ sha256sum --check ripgrep-provider.wasm.sha256
 }
 ```
 
-To drive the component without a deployment, load it with `FakeBroker` from
-[`dekopon-provider-sdk-testkit`](https://docs.rs/dekopon-provider-sdk-testkit): the same Wasmtime
-host, the same limits, no policy. `tests/broker.rs` is that harness; build the component (see
+To drive the component without a deployment, use `Harness<RipgrepProvider>` from the Git-pinned
+`dekopon-provider-sdk-testkit`: the real component host with the same limits and no storage grant.
+`tests/broker.rs` exercises it and runs typed component conformance; build the component (see
 below), then run `cargo test` with `DEKOPON_PROVIDER_COMPONENT` set to its path.
 
 ## Limits and JSON boundary
@@ -163,7 +165,7 @@ counts against host wire bytes; decoded UTF-8 counts against provider limits.
 | Resource | Required/default bound |
 |---|---:|
 | Serialized invocation JSON | 1,048,576 bytes |
-| Serialized response envelope | 1,048,576 bytes |
+| Host-wide response/stream ceiling | 1,048,576 bytes |
 | Linear memory | 64 MiB |
 | Release invocation fuel | 350,000,000 |
 | Wall time | 30 seconds |
@@ -180,8 +182,8 @@ The provider neither re-encodes nor estimates raw input size. The broker seriali
 input and rejects an invocation over 1 MiB before entering the component. Thus highly
 escaped JSON can exceed the wire limit while its decoded strings remain below provider limits.
 
-The SDK parses the complete WIT `input-json` string into `serde_json::Value` before calling the
-provider. Malformed JSON and trailing non-whitespace never reach `Provider::invoke`. Duplicate
+The SDK parses the complete WIT `input-json` string into typed `SearchInput` before calling the
+capability. Malformed JSON and trailing non-whitespace never reach `Capability::run`. Duplicate
 object names **cannot be rejected at that boundary**: `serde_json` retains the last value for a
 repeated name. The provider validates the resulting semantic object using closed
 `deny_unknown_fields` models. Callers should never send duplicate names.
@@ -202,7 +204,7 @@ repeated name. The provider validates the resulting semantic object using closed
 | Compiled regex program | 4 MiB |
 | DFA cache | 2 MiB |
 | Provider success envelope | 1,000,000 serialized bytes |
-| Release component | 2,000,000 bytes |
+| RG-a intermediate typed component | 2,007,815 bytes before final RG-b stream migration |
 
 Path labels must contain nonempty relative `/`-separated components and be exact-byte unique.
 Empty, `.`, `..`, control-containing, backslash, absolute, drive-prefixed, UNC-like, and empty
@@ -220,20 +222,19 @@ UTF-8 text and consume structured JSON results.
 ## Build and validate
 
 Generated Wasm is ignored and must never be committed. Builds use each checkout's ordinary
-`target/` and the machine's global Cargo/sccache configuration—no shared target directory or
+`target/` and the machine's global Cargo/kache configuration—no shared target directory or
 project-local compiler cache override.
 
 ```console
 rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
 rustup target add wasm32-unknown-unknown --toolchain 1.98.1
 cargo +1.98.1 install wasm-tools --version 1.259.0 --locked
-cargo +1.98.1 install wasmtime-cli --version 48.0.2 --locked
-../provider-workflows/build.sh
+/path/to/provider-workflows/build.sh
 ```
 
-`../provider-workflows/build.sh` (cloned next to this checkout) builds the reproducible component.
-Formatting, warnings-denied clippy, native/adversarial tests, license/source policy, component
-validation, and the FakeBroker component-host gate covering concurrent storage-free invocation,
+`provider-workflows/build.sh` builds the reproducible component. Formatting, warnings-denied
+clippy, native/adversarial tests, license/source policy, component validation, and the typed
+component-host gate covering concurrent storage-free invocation,
 the host wire bound, and every fuel and resource limit all run in the shared
 [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) CI.
 See [`SECURITY.md`](SECURITY.md).

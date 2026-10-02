@@ -84,13 +84,26 @@ mod tests {
     #[test]
     fn typed_manifest_is_import_free_and_closed() {
         let manifest = provider::manifest::<RipgrepProvider>().expect("typed manifest");
+        let snapshot = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&manifest).expect("manifest JSON")
+        );
+        assert_eq!(
+            snapshot,
+            include_str!("../tests/fixtures/typed-manifest.json")
+        );
         assert_eq!(manifest.id.as_str(), "ripgrep");
         assert_eq!(manifest.command_words, ["rg"]);
         assert_eq!(manifest.capabilities.len(), 1);
         let cap = &manifest.capabilities[0];
         assert_eq!(cap.id.as_str(), "ripgrep.search");
         assert_eq!(cap.risk, RiskLevel::Low);
+        assert_eq!(cap.effect, dekopon_provider_sdk::EffectKind::ReadOnly);
         assert_eq!(cap.input_schema["additionalProperties"], false);
         assert!(cap.input_schema["properties"]["documents"].is_object());
+        assert_eq!(
+            cap.input_schema["properties"]["context"]["additionalProperties"],
+            false
+        );
     }
 }

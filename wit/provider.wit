@@ -1,7 +1,0 @@
-package dekopon:ripgrep@0.1.0;
-
-/// Import-free bounded search over caller-supplied UTF-8 text that contributes the `rg` command
-/// word.
-world provider {
-    include dekopon:provider/provider-cli@0.3.0;
-}
