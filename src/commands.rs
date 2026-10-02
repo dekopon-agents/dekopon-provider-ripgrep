@@ -139,7 +139,36 @@ mod tests {
     use super::RipgrepProvider;
     use dekopon_provider_sdk::CommandRunOutcome;
     use dekopon_provider_sdk::provider::{self, Provider};
+    use dekopon_provider_sdk_testkit::Native;
     use serde_json::{Value, json};
+
+    const HELP: &str = "\
+Search the text piped into rg with ripgrep's matchers
+
+Usage: rg [OPTIONS] <PATTERN> [PATH]
+
+Arguments:
+  <PATTERN>  A Rust regex, or a literal string with -F
+  [PATH]     The name the piped text carries in results; never opened [default: <stdin>]
+
+Options:
+  -F, --fixed-strings         Treat the pattern as a literal string instead of a regex
+  -i, --ignore-case           Search case insensitively
+  -S, --smart-case            Search case insensitively when the pattern is all lowercase
+  -s, --case-sensitive        Search case sensitively (the default)
+  -w, --word-regexp           Only match whole words
+  -x, --line-regexp           Only match whole lines
+  -U, --multiline             Let a match span lines
+  -v, --invert-match          Select the lines that do not match
+  -A, --after-context <NUM>   Show NUM lines after each match, 0-8
+  -B, --before-context <NUM>  Show NUM lines before each match, 0-8
+  -C, --context <NUM>         Show NUM lines before and after each match, 0-8
+  -m, --max-count <NUM>       Stop after NUM matching lines, 1-1000 [default: 100]
+  -h, --help                  Print help
+  -V, --version               Print version
+
+rg searches only the text piped into it, as in `cat notes | rg -i todo`. PATH names that text in the JSON results and is never opened.
+";
 
     fn command(words: &[&str], piped: bool) -> CommandRunOutcome {
         provider::command::<RipgrepProvider>(
@@ -164,6 +193,30 @@ mod tests {
             other => panic!("{words:?}: expected proposal, got {other:?}"),
         }
     }
+
+    /// All typed fields are serialized, including unset defaults; piped bytes are not in a
+    /// proposal. RG-b replaces this temporary document placeholder with stdin-only input.
+    fn search(members: Value) -> Value {
+        let mut expected = json!({
+            "documents": [{"path": "<stdin>", "text": ""}],
+            "pattern": "alpha",
+            "mode": "regex",
+            "case": "sensitive",
+            "word": false,
+            "line": false,
+            "multiline": false,
+            "invert": false,
+            "context": {"before": 0, "after": 0},
+            "max_results": 100,
+        });
+        expected.as_object_mut().unwrap().extend(
+            members
+                .as_object()
+                .expect("members fixture is an object")
+                .clone(),
+        );
+        expected
+    }
     #[test]
     fn help_is_byte_pinned_on_stdout_at_status_zero() {
         for flag in ["--help", "-h"] {
@@ -176,11 +229,8 @@ mod tests {
                 panic!("help");
             };
             assert_eq!(status, 0);
-            assert!(stderr.is_empty());
-            assert!(stdout.contains("Usage: rg [OPTIONS] <PATTERN> [PATH]"));
-            assert!(
-                stdout.contains("PATH names that text in the JSON results and is never opened.")
-            );
+            assert_eq!(stderr, "");
+            assert_eq!(stdout, HELP, "{flag}");
         }
     }
     #[test]
@@ -211,15 +261,26 @@ mod tests {
         };
         assert_eq!(status, 2);
         assert_eq!(stdout, "");
-        assert!(stderr.contains("<PATTERN>"));
+        assert_eq!(
+            stderr,
+            "error: the following required arguments were not provided:\n  <PATTERN>\n\n\
+             Usage: rg <PATTERN> [PATH]\n\nFor more information, try '--help'.\n"
+        );
     }
     #[test]
     fn unsupported_flags_and_out_of_range_counts_are_usage_errors_at_status_two() {
         for (words, named) in [
-            (&["--glob", "*.rs", "alpha"][..], "--glob"),
+            (&["-g", "*.rs", "alpha"][..], "-g"),
+            (&["--glob", "*.rs", "alpha"], "--glob"),
             (&["--max-filesize", "1M", "alpha"], "--max-filesize"),
+            (&["-e", "alpha"], "-e"),
             (&["--json", "alpha"], "--json"),
+            (&["-r", "omega", "alpha"], "-r"),
+            (&["-foo"], "-f"),
+            (&["-C", "many", "alpha"], "many"),
             (&["-C", "9", "alpha"], "9"),
+            (&["-A", "-1", "alpha"], "-1"),
+            (&["-m", "0", "alpha"], "0"),
             (&["-m", "1001", "alpha"], "1001"),
             (&["alpha", "one", "two"], "two"),
         ] {
@@ -233,45 +294,104 @@ mod tests {
             };
             assert_eq!(status, 2);
             assert_eq!(stdout, "");
-            assert!(stderr.contains(named), "{stderr}");
-            assert!(!stderr.contains('\u{1b}'));
+            assert!(stderr.starts_with("error: "), "{words:?}: {stderr}");
+            assert!(stderr.contains(named), "{words:?}: {stderr}");
+            assert!(
+                stderr.ends_with("\nFor more information, try '--help'.\n"),
+                "{words:?}: {stderr}"
+            );
+            assert!(!stderr.contains('\u{1b}'), "{words:?}: {stderr}");
         }
     }
     #[test]
     fn each_flag_sets_exactly_its_input_member() {
-        for (words, member, expected) in [
-            (&["-F", "alpha"][..], "mode", json!("fixed")),
-            (&["-i", "alpha"], "case", json!("insensitive")),
-            (&["-S", "alpha"], "case", json!("smart")),
-            (&["-s", "alpha"], "case", json!("sensitive")),
-            (&["-w", "alpha"], "word", json!(true)),
-            (&["-x", "alpha"], "line", json!(true)),
-            (&["-U", "alpha"], "multiline", json!(true)),
-            (&["-v", "alpha"], "invert", json!(true)),
-            (&["-m", "7", "alpha"], "max_results", json!(7)),
+        for (words, members) in [
+            (&["alpha"][..], json!({})),
+            (&["-F", "alpha"], json!({"mode": "fixed"})),
+            (&["--fixed-strings", "alpha"], json!({"mode": "fixed"})),
+            (&["-i", "alpha"], json!({"case": "insensitive"})),
+            (&["--ignore-case", "alpha"], json!({"case": "insensitive"})),
+            (&["-S", "alpha"], json!({"case": "smart"})),
+            (&["--smart-case", "alpha"], json!({"case": "smart"})),
+            (&["-s", "alpha"], json!({"case": "sensitive"})),
+            (&["--case-sensitive", "alpha"], json!({"case": "sensitive"})),
+            (&["-i", "-s", "alpha"], json!({"case": "sensitive"})),
+            (&["-s", "-S", "alpha"], json!({"case": "smart"})),
+            (&["-w", "alpha"], json!({"word": true})),
+            (&["--word-regexp", "alpha"], json!({"word": true})),
+            (&["-x", "alpha"], json!({"line": true})),
+            (&["--line-regexp", "alpha"], json!({"line": true})),
+            (&["-U", "alpha"], json!({"multiline": true})),
+            (&["--multiline", "alpha"], json!({"multiline": true})),
+            (&["-v", "alpha"], json!({"invert": true})),
+            (&["--invert-match", "alpha"], json!({"invert": true})),
+            (
+                &["-A", "2", "alpha"],
+                json!({"context": {"before": 0, "after": 2}}),
+            ),
+            (
+                &["--after-context=2", "alpha"],
+                json!({"context": {"before": 0, "after": 2}}),
+            ),
+            (
+                &["-B", "3", "alpha"],
+                json!({"context": {"before": 3, "after": 0}}),
+            ),
+            (
+                &["--before-context", "3", "alpha"],
+                json!({"context": {"before": 3, "after": 0}}),
+            ),
+            (
+                &["-C", "8", "alpha"],
+                json!({"context": {"before": 8, "after": 8}}),
+            ),
+            (
+                &["--context", "0", "alpha"],
+                json!({"context": {"before": 0, "after": 0}}),
+            ),
+            (
+                &["-C", "4", "-A", "1", "alpha"],
+                json!({"context": {"before": 4, "after": 1}}),
+            ),
+            (
+                &["-B", "1", "-C", "4", "alpha"],
+                json!({"context": {"before": 1, "after": 4}}),
+            ),
+            (&["-m", "7", "alpha"], json!({"max_results": 7})),
+            (
+                &["--max-count", "1000", "alpha"],
+                json!({"max_results": 1000}),
+            ),
+            (&["-m", "1", "-m", "5", "alpha"], json!({"max_results": 5})),
+            (
+                &["alpha", "-iw"],
+                json!({"case": "insensitive", "word": true}),
+            ),
         ] {
-            assert_eq!(proposal(words)[member], expected, "{words:?}");
+            assert_eq!(proposal(words), search(members), "{words:?}");
         }
-        assert_eq!(
-            proposal(&["-C", "4", "-A", "1", "alpha"])["context"],
-            json!({"before":4,"after":1})
-        );
-        assert_eq!(proposal(&["-m", "1", "-m", "5", "alpha"])["max_results"], 5);
     }
     #[test]
     fn path_names_the_piped_text_and_dash_is_stdin() {
         assert_eq!(
-            proposal(&["alpha", "notes/todo.md"])["documents"][0]["path"],
-            "notes/todo.md"
+            proposal(&["alpha", "notes/todo.md"]),
+            search(json!({"documents": [{"path": "notes/todo.md", "text": ""}]}))
         );
-        assert_eq!(proposal(&["alpha", "-"])["documents"][0]["path"], "<stdin>");
+        assert_eq!(proposal(&["alpha", "-"]), search(json!({})));
     }
     #[test]
     fn double_dash_ends_the_options() {
-        assert_eq!(proposal(&["--", "-foo"])["pattern"], "-foo");
         assert_eq!(
-            proposal(&["-i", "--", "-v", "--label"])["documents"][0]["path"],
-            "--label"
+            proposal(&["--", "-foo"]),
+            search(json!({"pattern": "-foo"}))
+        );
+        assert_eq!(
+            proposal(&["-i", "--", "-v", "--label"]),
+            search(json!({
+                "documents": [{"path": "--label", "text": ""}],
+                "pattern": "-v",
+                "case": "insensitive",
+            }))
         );
     }
     #[test]
@@ -296,18 +416,24 @@ mod tests {
     }
     #[test]
     fn every_proposal_is_a_search_invoke_accepts() {
-        for words in [
-            &["alpha"][..],
-            &["-F", "-i", "-w", "-C", "8", "-m", "1000", "ALPHA"],
-            &["-S", "-x", "-A", "0", "-B", "8", "alpha"],
-            &["-s", "-U", "-m", "1", "alpha\\nbeta"],
-            &["-v", "alpha", "notes/todo.md"],
+        const TEXT: &str = "alpha\nbeta\nALPHA\n";
+        for (words, selected) in [
+            (&["alpha"][..], 1),
+            (&["-F", "-i", "-w", "-C", "8", "-m", "1000", "ALPHA"], 2),
+            (&["-S", "-x", "-A", "0", "-B", "8", "alpha"], 2),
+            (&["-s", "-U", "-m", "1", "alpha\nbeta"], 1),
+            (&["-v", "alpha", "notes/todo.md"], 2),
         ] {
-            let proposal = proposal(words);
-            assert!(
-                serde_json::from_value::<crate::input::SearchInput>(proposal).is_ok(),
-                "{words:?}"
-            );
+            let mut input = proposal(words);
+            // RG-a's temporary typed proposal carries a document placeholder, not stdin bytes.
+            // Fill only that text for this invoke-parity test; RG-b exercises actual stdin.
+            input["documents"][0]["text"] = json!(TEXT);
+            let output =
+                Native::<RipgrepProvider>::new().call("ripgrep.search", &input.to_string());
+            assert_eq!(output.status, 0, "{words:?}: {}", output.stderr);
+            let value: Value =
+                serde_json::from_slice(&output.stdout).expect("RG-a JSON stdout bridge");
+            assert_eq!(value["selected_count"], selected, "{words:?}: {value}");
         }
     }
 }
