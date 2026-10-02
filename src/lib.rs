@@ -55,7 +55,7 @@ impl Provider for RipgrepProvider {
         }
         let input = input::SearchInput::parse(input)?;
         let output = search::run(&input)?;
-        serde_json::to_value(output).map_err(|_| error::search_failed())
+        serde_json::to_value(output).map_err(|_| error::search_failed().into())
     }
 
     fn run_command(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {

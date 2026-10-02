@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
-use dekopon_provider_sdk::ProviderError;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error;
+use crate::error::{self, SearchError};
 
 pub(crate) const MIN_DOCUMENTS: usize = 1;
 pub(crate) const MAX_DOCUMENTS: usize = 16;
@@ -75,13 +74,13 @@ const fn default_max_results() -> usize {
 }
 
 impl SearchInput {
-    pub(crate) fn parse(value: Value) -> Result<Self, ProviderError> {
+    pub(crate) fn parse(value: Value) -> Result<Self, SearchError> {
         let input: Self = serde_json::from_value(value).map_err(|_| error::invalid_input())?;
         input.validate()?;
         Ok(input)
     }
 
-    fn validate(&self) -> Result<(), ProviderError> {
+    fn validate(&self) -> Result<(), SearchError> {
         if !(MIN_DOCUMENTS..=MAX_DOCUMENTS).contains(&self.documents.len())
             || self.pattern.is_empty()
             || self.pattern.len() > MAX_PATTERN_BYTES

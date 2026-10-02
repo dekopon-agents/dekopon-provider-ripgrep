@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io};
 
-use dekopon_provider_sdk::ProviderError;
+use crate::error::SearchError;
 use grep_matcher::{LineTerminator, Matcher};
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
 use grep_searcher::{
@@ -41,7 +41,7 @@ impl Candidate {
         input: &'a SearchInput,
         matcher: &RegexMatcher,
         multiline_with_matcher: bool,
-    ) -> Result<SearchResult<'a>, ProviderError> {
+    ) -> Result<SearchResult<'a>, SearchError> {
         let document = input
             .documents
             .get(self.document_index)
@@ -171,7 +171,7 @@ impl Sink for CollectSink<'_> {
     }
 }
 
-pub(crate) fn run<'a>(input: &'a SearchInput) -> Result<SearchOutput<'a>, ProviderError> {
+pub(crate) fn run<'a>(input: &'a SearchInput) -> Result<SearchOutput<'a>, SearchError> {
     let matcher = build_matcher(input)?;
     let multiline_with_matcher = build_searcher(input).multi_line_with_matcher(&matcher);
     let mut candidates = Vec::new();
@@ -204,7 +204,7 @@ pub(crate) fn run<'a>(input: &'a SearchInput) -> Result<SearchOutput<'a>, Provid
     )
 }
 
-fn build_matcher(input: &SearchInput) -> Result<RegexMatcher, ProviderError> {
+fn build_matcher(input: &SearchInput) -> Result<RegexMatcher, SearchError> {
     let mut builder = RegexMatcherBuilder::new();
     builder
         .case_insensitive(input.case == CaseMode::Insensitive)
@@ -266,7 +266,7 @@ fn collect_submatches(
     byte_end: usize,
     matcher: &RegexMatcher,
     multiline_with_matcher: bool,
-) -> Result<(Vec<Submatch>, bool), ProviderError> {
+) -> Result<(Vec<Submatch>, bool), SearchError> {
     let selected = document
         .get(byte_start..byte_end)
         .ok_or_else(error::search_failed)?;
@@ -370,7 +370,7 @@ fn apply_output_limit<'a>(
     multiline_with_matcher: bool,
     mut candidates: Vec<Candidate>,
     max_results_probed: bool,
-) -> Result<SearchOutput<'a>, ProviderError> {
+) -> Result<SearchOutput<'a>, SearchError> {
     // Searcher callbacks are ordered, but sorting compact metadata makes that invariant explicit
     // before indexed normalization and deterministic output accounting.
     candidates.sort_by_key(|candidate| {
