@@ -1,4 +1,5 @@
 //! Real component under the typed SDK/testkit host. RG-a still bridges documents as stdout JSON.
+use dekopon_broker_host::BrokerHostError;
 use dekopon_provider_sdk::{CommandRunOutcome, provider};
 use dekopon_provider_sdk_testkit::{BrokerHostLimits, Harness, HarnessError, conformance};
 use dekopon_ripgrep_provider::RipgrepProvider;
@@ -25,6 +26,15 @@ fn call_with(fuel: u64, input: Value) -> Result<Value, HarnessError> {
 }
 fn call(input: Value) -> Result<Value, HarnessError> {
     call_with(RELEASE_FUEL, input)
+}
+fn guest_failure(error: &HarnessError) -> Option<(u8, &str)> {
+    let HarnessError::Invocation(failure) = error else {
+        return None;
+    };
+    match failure.error.as_ref() {
+        BrokerHostError::ProviderFailure { status, stderr, .. } => Some((*status, stderr)),
+        _ => None,
+    }
 }
 fn widest_documents() -> Value {
     let text = format!("{}\n", "a".repeat(MAX_DOCUMENT_TEXT_BYTES - 1));
@@ -123,15 +133,18 @@ fn concurrent_invocations_need_no_storage_and_the_host_bounds_the_wire() -> Test
     let escaped = "\u{0000}".repeat(100_000);
     let error = call(json!({"documents":[{"path":"a","text":escaped},{"path":"b","text":escaped}],"pattern":"x"}))
         .expect_err("host rejects serialized input >1 MiB");
+    assert!(matches!(error, HarnessError::Invocation(_)), "{error:?}");
     assert!(
-        !format!("{error:?}").contains("ProviderFailure"),
-        "{error:?}"
+        guest_failure(&error).is_none(),
+        "host refusal, not guest: {error:?}"
     );
     let error = call(json!({"documents":[{"path":"bad","text":"x"}],"pattern":"x","extra":true}))
         .expect_err("closed schema rejects an unknown member");
-    assert!(
-        format!("{error:?}").contains("ProviderFailure"),
-        "{error:?}"
+    let (status, stderr) = guest_failure(&error).expect("guest closed-schema refusal");
+    assert_eq!(status, 2);
+    assert_eq!(
+        stderr,
+        "the input does not match the capability's input schema\n"
     );
     Ok(())
 }
@@ -162,7 +175,11 @@ fn a_far_smaller_budget_still_binds_the_widest_scan() {
     )
     .expect_err("1M fuel cannot scan the widest input");
     assert!(
-        !format!("{failure:?}").contains("ProviderFailure"),
+        matches!(failure, HarnessError::Invocation(_)),
+        "{failure:?}"
+    );
+    assert!(
+        guest_failure(&failure).is_none(),
         "host, not guest: {failure:?}"
     );
 }
@@ -238,9 +255,11 @@ fn raw_smoke_describe_search_invalid_input_and_help_text() -> TestResult {
     let rejected =
         call(json!({"documents":[{"path":"raw","text":"hit"}],"pattern":"hit","unknown":true}))
             .expect_err("unknown member");
-    assert!(
-        format!("{rejected:?}").contains("ProviderFailure"),
-        "{rejected:?}"
+    let (status, stderr) = guest_failure(&rejected).expect("guest closed-schema refusal");
+    assert_eq!(status, 2);
+    assert_eq!(
+        stderr,
+        "the input does not match the capability's input schema\n"
     );
     let CommandRunOutcome::Rendered {
         stdout,
