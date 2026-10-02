@@ -3,79 +3,64 @@
 ## Reporting
 
 Report suspected vulnerabilities privately through GitHub's security-advisory flow for
-`dekopon-agents/dekopon-provider-ripgrep`. Do not include private document content in a public
+`dekopon-agents/dekopon-provider-ripgrep`. Do not include private piped input in a public
 issue. Every published version of this repository is immutable; a fix is released as a new version
 and never by replacing bytes already published under an existing one.
 
 ## Authority boundary
 
-`ripgrep.search` processes only caller-supplied `serde_json::Value` data. A document path is an
-opaque label and is never dereferenced. Handwritten provider code performs no filesystem, path
-lookup, directory walk, mmap, network, HTTP, storage, subprocess, environment, clock, random, WASI,
-or JavaScript operation. The decoded component WIT has no imports and exports exactly `describe`,
-`invoke`, and `run-command`; `commandWords` is `["rg"]`.
+`ripgrep.search` searches only the SDK's piped stdin reader. Its closed JSON proposal supplies
+search options, never text or a path. Handwritten provider code performs no filesystem, path
+lookup, directory walk, mmap, network, HTTP, storage, subprocess, environment, clock, random,
+WASI, or JavaScript operation. The decoded component imports mandatory
+`dekopon:stdio/streams@0.1.0` and exports `describe`, `invoke`, and `run-command`;
+`commandWords` is `["rg"]`. Stdin and stdout are host-controlled streams, not grants to files.
 
-`run-command` is the `rg` word. It reads only its argv and the value piped into it, and either
-renders clap's help, version, or usage text — which authorizes nothing — or returns a
-`ripgrep.search` proposal that the broker authorizes exactly as a direct call. `PATH` is a label for
-the piped text, never dereferenced.
+`run-command` is the `rg` word. It reads argv and the boolean `stdin-piped` marker only, and either
+renders clap help/version/usage — which authorizes nothing — or proposes `ripgrep.search`,
+authorized by the broker exactly as a direct call. No path operand or filesystem flag is accepted.
 
 The security boundary is the validated component plus a correctly configured Dekopon host:
 
-- the host enforces 1,048,576-byte serialized input and response limits, 64 MiB linear memory,
-  350,000,000 fuel for release invocations, and a 30-second deadline;
-- the provider enforces decoded document/pattern/path/count limits, closed semantic objects,
-  regex nesting/program/cache limits, result/submatch limits, and a 1,000,000-byte success envelope;
+- the host enforces 1,048,576-byte serialized proposal input, 64 MiB linear memory,
+  350,000,000 fuel for release invocations, and a 30-second deadline; stdout is a stream;
+- the provider enforces closed search options, pattern/context/count limits, regex
+  nesting/program/cache limits, and a 1 MiB grep-searcher heap limit;
 - the broker separately authenticates callers, authorizes `ripgrep.search`, and constrains an
   invocation. The component itself grants nothing.
 
 Compilation is outside invocation fuel/deadline accounting. A deployment should admit only a
 reviewed component digest and keep its Wasmtime compilation cache owner-writable only.
 
-## JSON boundary
+## JSON proposal and stream boundary
 
-`export_provider_with_cli!` parses the entire WIT `input-json` string into `serde_json::Value`
-before `Provider::invoke`. Malformed JSON and trailing non-whitespace are rejected by that SDK
-adapter. The provider then deserializes closed `deny_unknown_fields` models and validates decoded
-bytes and numeric ranges.
+The SDK parses `input-json` into the closed typed schema; malformed JSON, unknown properties,
+invalid ranges and incompatible options are rejected. The only required member is `pattern`.
+The proposal is bounded separately from stdin. Duplicate JSON object keys retain the last value
+after parsing; producers must emit unique keys. No JSON result envelope is returned.
 
-Duplicate object names cannot be detected after parsing to `Value`. `serde_json` retains the last
-value. This is documented behavior, tested at the raw component boundary, and is not represented as
-a provider guarantee. Producers must emit unique object names. The provider intentionally performs
-no second raw input-size calculation; JSON escaping is a host wire concern.
+`grep_searcher::Searcher::search_reader` consumes the stdin reader and writes selected matching
+and context text lines to stdout, without buffering the complete default-mode input. BOM sniffing,
+transcoding, binary detection and mmap are disabled. The matcher bounds regex nesting to 64,
+program size to 4 MiB, DFA cache to 2 MiB, and pattern length to 4,096 UTF-8 bytes; PCRE2,
+look-around and backreferences are unavailable. Context is bounded to eight lines per side,
+`max_results` to 1–1,000 selected lines. The searcher heap limit is 1 MiB: long records fail
+cleanly. **Multiline `-U` reads at most 1 MiB of stdin and fails above it** because cross-line
+matching needs the whole input, as with ripgrep's multiline mode. Over-limit search exits nonzero
+with a bounded static stderr message; it never emits input or a JSON envelope as an error.
 
-## Resource and regex controls
-
-Inputs are bounded to 16 documents, 131,072 decoded UTF-8 bytes each, 786,432 aggregate text bytes,
-and a 4,096-byte pattern. Rust regex compilation uses nesting 64, a 4 MiB program limit, and a 2 MiB
-hybrid DFA cache. PCRE2, look-around, and backreferences are unavailable. Searches call only
-`grep_searcher::Searcher::search_slice`; BOM sniffing, transcoding, binary detection, and mmap are
-explicitly disabled.
-
-The sink observes one selected record and one submatch beyond caller/provider limits, then returns
-only complete deterministic prefixes. At most 64 overall occurrences are retained per selected
-record. Context is deduplicated through per-document selected-range indexes and cannot survive
-without a retained selected record. Normalization and record/submatch materialization stop after
-the single output probe instead of processing the excluded tail. Exact nonallocating record-length
-accounting keeps the SDK success envelope at or below 1,000,000 serialized bytes.
-
-The 350,000,000 release fuel ceiling is measured by component-host regressions rather than inferred
-from native timing. The gates cover maximum decoded no-match scanning, a maximum-aggregate
-roughly-770-KiB response under release fuel and 64 MiB, the reported 409-record context case under
-10,000,000 fuel, and 1,000 simple selected records under 30,000,000 fuel. Fuel and the 30-second
-deadline are independent host-failure bounds, not provider error codes.
-
-Host traps (fuel, deadline, or memory) are host failures, not provider-declared errors. Provider
-failures use static messages and only these stable codes: `unsupported-capability`, `invalid-input`,
-`invalid-options`, `invalid-pattern`, and `search-failed`. Upstream parser/search diagnostics,
-document paths, patterns, and text are never reflected into provider error messages.
+A match exits 0; valid no-match exits 1 as a guest exit, not a host failure; absent or zero-byte
+required stdin and malformed usage exit 2. A closed stdout reader exits 141 and supersedes other
+provider errors. SDK `Failure` currently writes an empty line to stderr for valid no-match; it
+never includes the pattern or stdin bytes. Fuel exhaustion, deadline, and memory traps remain host
+failures, not guest statuses. The broker still audits and authorizes the proposal; a streamed
+stdout line is not an independent authority decision.
 
 ## Supply chain and release
 
 `Cargo.lock` pins every transitive version/checksum. Direct SDK, ripgrep, Serde, wit-bindgen, and
 testkit pins are exact. `cargo-deny` limits registries, licenses, advisories, and forbidden
-packages. CI rejects any tracked `*.wasm`, validates both core and component modules, proves zero
-imports, checks decoded WIT, and enforces the 2,000,000-byte component ceiling. All third-party
+packages. CI rejects any tracked `*.wasm`, validates both core and component modules, checks the mandatory stdio import and no optional imports, checks decoded WIT, and enforces the 2,000,000-byte component ceiling. All third-party
 Actions are full commit SHAs.
 
 The release workflow:

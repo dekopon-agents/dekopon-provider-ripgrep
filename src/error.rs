@@ -59,6 +59,6 @@ pub(crate) fn no_match() -> SearchError {
 pub(crate) fn search_failed() -> SearchError {
     SearchError {
         code: Code::new("search-failed"),
-        message: "the streaming search could not be completed",
+        message: "search failed: stdin record or multiline input exceeds the 1 MiB search limit, or a reader failed",
     }
 }

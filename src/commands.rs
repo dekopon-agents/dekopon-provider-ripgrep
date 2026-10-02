@@ -121,65 +121,260 @@ pub(crate) fn propose(rg: Rg, stdin_piped: bool) -> Result<Proposal<RipgrepProvi
 mod tests {
     use super::RipgrepProvider;
     use dekopon_provider_sdk::{CommandRunOutcome, provider};
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    const HELP: &str = "\
+Search the text piped into rg with ripgrep's matchers
+
+Usage: rg [OPTIONS] <PATTERN>
+
+Arguments:
+  <PATTERN>  A Rust regex, or a literal string with -F
+
+Options:
+  -F, --fixed-strings         Treat the pattern as a literal string instead of a regex
+  -i, --ignore-case           Search case insensitively
+  -S, --smart-case            Search case insensitively when the pattern is all lowercase
+  -s, --case-sensitive        Search case sensitively (the default)
+  -w, --word-regexp           Only match whole words
+  -x, --line-regexp           Only match whole lines
+  -U, --multiline             Let a match span lines
+  -v, --invert-match          Select the lines that do not match
+  -A, --after-context <NUM>   Show NUM lines after each match, 0-8
+  -B, --before-context <NUM>  Show NUM lines before each match, 0-8
+  -C, --context <NUM>         Show NUM lines before and after each match, 0-8
+  -m, --max-count <NUM>       Stop after NUM matching lines, 1-1000 [default: 100]
+  -h, --help                  Print help
+  -V, --version               Print version
+
+rg searches only the text piped into it, as in `cat notes | rg -i todo`.
+";
     fn command(words: &[&str], piped: bool) -> CommandRunOutcome {
         provider::command::<RipgrepProvider>(
             &words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
             piped,
         )
     }
-    #[test]
-    fn command_proposes_only_piped_stdin_and_keeps_flags() {
+    fn proposal(words: &[&str]) -> Value {
         let CommandRunOutcome::Proposed {
             capability,
             input,
             secret_use,
-        } = command(&["-i", "-A", "2", "needle"], true)
+        } = command(words, true)
         else {
-            panic!("proposal")
+            panic!("{words:?}: expected proposal")
         };
         assert_eq!(capability.as_str(), "ripgrep.search");
         assert!(secret_use.is_none());
-        assert_eq!(
-            input,
-            json!({"pattern":"needle","mode":"regex","case":"insensitive","word":false,"line":false,"multiline":false,"invert":false,"context":{"before":0,"after":2},"max_results":100})
-        );
-        assert!(matches!(
-            command(&["needle"], false),
-            CommandRunOutcome::Failed { .. }
-        ));
+        input
+    }
+    fn search(members: Value) -> Value {
+        let mut expected = json!({"pattern":"alpha","mode":"regex","case":"sensitive",
+            "word":false,"line":false,"multiline":false,"invert":false,
+            "context":{"before":0,"after":0},"max_results":100});
+        expected
+            .as_object_mut()
+            .unwrap()
+            .extend(members.as_object().unwrap().clone());
+        expected
     }
     #[test]
-    fn help_version_and_bad_flags_have_guest_status() {
-        for flag in ["--help", "--version"] {
+    fn help_is_byte_pinned_on_stdout_at_status_zero() {
+        for flag in ["--help", "-h"] {
             let CommandRunOutcome::Rendered {
-                status,
                 stdout,
                 stderr,
+                status,
             } = command(&[flag], false)
             else {
-                panic!("render")
+                panic!("help")
             };
-            assert_eq!(status, 0);
-            assert!(stdout.starts_with("rg ") || stdout.contains("Usage: rg"));
-            assert!(stderr.is_empty());
+            assert_eq!(
+                (status, stderr.as_str(), stdout.as_str()),
+                (0, "", HELP),
+                "{flag}"
+            );
         }
-        for words in [
-            &["--json", "needle"][..],
-            &["needle", "path"],
-            &["-m", "0", "needle"],
-        ] {
+    }
+    #[test]
+    fn version_is_the_crate_version_on_stdout_at_status_zero() {
+        for flag in ["--version", "-V"] {
             let CommandRunOutcome::Rendered {
-                status,
                 stdout,
                 stderr,
+                status,
+            } = command(&[flag], false)
+            else {
+                panic!("version")
+            };
+            assert_eq!(
+                (status, stderr.as_str(), stdout.as_str()),
+                (0, "", concat!("rg ", env!("CARGO_PKG_VERSION"), "\n"))
+            );
+        }
+    }
+    #[test]
+    fn missing_pattern_is_exact_usage_two() {
+        let CommandRunOutcome::Rendered {
+            stdout,
+            stderr,
+            status,
+        } = command(&[], true)
+        else {
+            panic!("usage")
+        };
+        assert_eq!(status, 2);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            "error: the following required arguments were not provided:\n  <PATTERN>\n\n\
+             Usage: rg <PATTERN>\n\nFor more information, try '--help'.\n"
+        );
+    }
+    #[test]
+    fn unsupported_flags_paths_and_out_of_range_counts_are_usage_two() {
+        for (words, named) in [
+            (&["-g", "*.rs", "alpha"][..], "-g"),
+            (&["--glob", "*.rs", "alpha"], "--glob"),
+            (&["--max-filesize", "1M", "alpha"], "--max-filesize"),
+            (&["-e", "alpha"], "-e"),
+            (&["--json", "alpha"], "--json"),
+            (&["-r", "omega", "alpha"], "-r"),
+            (&["-foo"], "-f"),
+            (&["-C", "many", "alpha"], "many"),
+            (&["-C", "9", "alpha"], "9"),
+            (&["-A", "-1", "alpha"], "-1"),
+            (&["-m", "0", "alpha"], "0"),
+            (&["-m", "1001", "alpha"], "1001"),
+            (&["alpha", "one"], "one"),
+        ] {
+            let CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
             } = command(words, true)
             else {
-                panic!("usage")
+                panic!("{words:?}")
             };
-            assert_eq!(status, 2);
-            assert!(stdout.is_empty());
-            assert!(stderr.starts_with("error: "));
+            assert_eq!(status, 2, "{words:?}");
+            assert_eq!(stdout, "");
+            assert!(
+                stderr.starts_with("error: ") && stderr.contains(named),
+                "{words:?}: {stderr}"
+            );
+            assert!(stderr.ends_with("\nFor more information, try '--help'.\n"));
+            assert!(!stderr.contains('\u{1b}'));
+        }
+    }
+    #[test]
+    fn every_supported_flag_and_override_sets_exact_proposal_members() {
+        for (words, members) in [
+            (&["alpha"][..], json!({})),
+            (&["-F", "alpha"], json!({"mode":"fixed"})),
+            (&["--fixed-strings", "alpha"], json!({"mode":"fixed"})),
+            (&["-i", "alpha"], json!({"case":"insensitive"})),
+            (&["--ignore-case", "alpha"], json!({"case":"insensitive"})),
+            (&["-S", "alpha"], json!({"case":"smart"})),
+            (&["--smart-case", "alpha"], json!({"case":"smart"})),
+            (&["-s", "alpha"], json!({"case":"sensitive"})),
+            (&["--case-sensitive", "alpha"], json!({"case":"sensitive"})),
+            (&["-i", "-s", "alpha"], json!({"case":"sensitive"})),
+            (&["-s", "-S", "alpha"], json!({"case":"smart"})),
+            (&["-w", "alpha"], json!({"word":true})),
+            (&["--word-regexp", "alpha"], json!({"word":true})),
+            (&["-x", "alpha"], json!({"line":true})),
+            (&["--line-regexp", "alpha"], json!({"line":true})),
+            (&["-U", "alpha"], json!({"multiline":true})),
+            (&["--multiline", "alpha"], json!({"multiline":true})),
+            (&["-v", "alpha"], json!({"invert":true})),
+            (&["--invert-match", "alpha"], json!({"invert":true})),
+            (
+                &["-A", "2", "alpha"],
+                json!({"context":{"before":0,"after":2}}),
+            ),
+            (
+                &["--after-context=2", "alpha"],
+                json!({"context":{"before":0,"after":2}}),
+            ),
+            (
+                &["-B", "3", "alpha"],
+                json!({"context":{"before":3,"after":0}}),
+            ),
+            (
+                &["--before-context", "3", "alpha"],
+                json!({"context":{"before":3,"after":0}}),
+            ),
+            (
+                &["-C", "8", "alpha"],
+                json!({"context":{"before":8,"after":8}}),
+            ),
+            (
+                &["--context", "0", "alpha"],
+                json!({"context":{"before":0,"after":0}}),
+            ),
+            (
+                &["-C", "4", "-A", "1", "alpha"],
+                json!({"context":{"before":4,"after":1}}),
+            ),
+            (
+                &["-B", "1", "-C", "4", "alpha"],
+                json!({"context":{"before":1,"after":4}}),
+            ),
+            (&["-m", "7", "alpha"], json!({"max_results":7})),
+            (
+                &["--max-count", "1000", "alpha"],
+                json!({"max_results":1000}),
+            ),
+            (&["-m", "1", "-m", "5", "alpha"], json!({"max_results":5})),
+            (&["alpha", "-iw"], json!({"case":"insensitive","word":true})),
+        ] {
+            assert_eq!(proposal(words), search(members), "{words:?}");
+        }
+        assert_eq!(proposal(&["--", "-foo"]), search(json!({"pattern":"-foo"})));
+    }
+    #[test]
+    fn nothing_piped_is_a_decline_and_target_is_declared() {
+        let CommandRunOutcome::Failed { error } = command(&["alpha"], false) else {
+            panic!("missing pipe")
+        };
+        assert_eq!(error.code, "usage");
+        assert!(error.message.contains("nothing was piped in"));
+        assert_eq!(
+            provider::manifest::<RipgrepProvider>()
+                .unwrap()
+                .capabilities[0]
+                .id
+                .as_str(),
+            "ripgrep.search"
+        );
+    }
+    #[test]
+    fn proposals_are_accepted_by_native_stdin_search() {
+        use dekopon_provider_sdk_testkit::Native;
+        for (words, text, expected) in [
+            (&["alpha"][..], "alpha\nbeta\nALPHA\n", "alpha\n"),
+            (
+                &["-F", "-i", "-w", "-C", "8", "-m", "1000", "ALPHA"],
+                "alpha\nbeta\nALPHA\n",
+                "alpha\nbeta\nALPHA\n",
+            ),
+            (
+                &["-S", "-x", "-A", "0", "-B", "8", "alpha"],
+                "alpha\nbeta\nALPHA\n",
+                "alpha\nbeta\nALPHA\n",
+            ),
+            (
+                &["-s", "-U", "-m", "1", "alpha\\nbeta"],
+                "alpha\nbeta\n",
+                "alpha\nbeta\n",
+            ),
+            (&["-v", "alpha"], "alpha\nbeta\nALPHA\n", "beta\nALPHA\n"),
+        ] {
+            let output = Native::<RipgrepProvider>::new()
+                .stdin(text.as_bytes().to_vec())
+                .call("ripgrep.search", &proposal(words).to_string());
+            assert_eq!(output.status, 0, "{words:?}: {}", output.stderr);
+            assert_eq!(output.stdout, expected.as_bytes(), "{words:?}");
         }
     }
 }

@@ -61,6 +61,17 @@ fn closed_schema_and_invalid_options_exit_without_search() {
 }
 
 #[test]
+fn multiline_input_over_one_mib_fails_cleanly() {
+    let result = run(
+        serde_json::json!({"pattern":"(?s)a.*z","multiline":true}),
+        &b"a\n".repeat(600_000),
+    );
+    assert_ne!(result.status, 0);
+    assert!(result.stdout.is_empty());
+    assert!(result.stderr.contains("1 MiB"), "{}", result.stderr);
+}
+
+#[test]
 fn downstream_closed_stdout_exits_141_without_error_text() {
     use dekopon_provider_sdk::provider::{NativeStdio, invoke_native};
     use std::io::{self, Write};
