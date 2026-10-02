@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   ci:
-    uses: dekopon-agents/provider-workflows/.github/workflows/ci.yml@main
+    uses: dekopon-agents/provider-workflows/.github/workflows/ci.yml@feat/w2-gate-deletions
