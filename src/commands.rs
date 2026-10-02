@@ -194,8 +194,6 @@ rg searches only the text piped into it, as in `cat notes | rg -i todo`. PATH na
         }
     }
 
-    /// All typed fields are serialized, including unset defaults; piped bytes are not in a
-    /// proposal. RG-b replaces this temporary document placeholder with stdin-only input.
     fn search(members: Value) -> Value {
         let mut expected = json!({
             "documents": [{"path": "<stdin>", "text": ""}],
@@ -425,8 +423,6 @@ rg searches only the text piped into it, as in `cat notes | rg -i todo`. PATH na
             (&["-v", "alpha", "notes/todo.md"], 2),
         ] {
             let mut input = proposal(words);
-            // RG-a's temporary typed proposal carries a document placeholder, not stdin bytes.
-            // Fill only that text for this invoke-parity test; RG-b exercises actual stdin.
             input["documents"][0]["text"] = json!(TEXT);
             let output =
                 Native::<RipgrepProvider>::new().call("ripgrep.search", &input.to_string());
