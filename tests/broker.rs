@@ -98,6 +98,7 @@ fn the_rg_word_renders_in_the_guest_and_proposes_a_search_the_host_runs() -> Tes
     )?;
     assert_eq!(output["selected_count"], 1);
     assert_eq!(output["results"][0]["path"], "notes/todo.md");
+    assert_eq!(output["results"][1]["kind"], "context_after");
     assert_eq!(output["results"][1]["text"], "beta\n");
     Ok(())
 }
@@ -157,6 +158,7 @@ fn release_fuel_covers_the_widest_scan_and_the_widest_output() -> TestResult {
     assert_eq!(scanned["results"], json!([]));
     let widest = call(json!({"documents":documents,"pattern":"a+","max_results":6}))?;
     assert_eq!(widest["selected_count"], 6);
+    assert_eq!(widest["results"].as_array().expect("results").len(), 6);
     for result in widest["results"].as_array().unwrap() {
         assert_eq!(
             result["text"].as_str().unwrap().len(),
@@ -271,6 +273,6 @@ fn raw_smoke_describe_search_invalid_input_and_help_text() -> TestResult {
     };
     assert_eq!(status, 0);
     assert_eq!(stderr, "");
-    assert!(stdout.contains("Usage: rg"));
+    assert!(stdout.contains("Usage: rg [OPTIONS] <PATTERN> [PATH]"));
     Ok(())
 }
