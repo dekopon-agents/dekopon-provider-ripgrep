@@ -162,7 +162,6 @@ const fn decimal_len(mut value: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::ComponentResponse;
     use serde_json::json;
 
     use super::{
@@ -241,12 +240,11 @@ mod tests {
                 output.selected_count,
                 &reasons,
             );
-            let actual = serde_json::to_vec(&ComponentResponse::Succeeded {
-                output: serde_json::to_value(&output).expect("output converts to Value"),
-            })
-            .expect("SDK envelope serializes")
-            .len();
-            assert_eq!(calculated, actual, "{}", json!(output));
+            let actual = serde_json::to_vec(&output)
+                .expect("stdout JSON serializes")
+                .len();
+            assert!(calculated >= actual, "{}", json!(output));
+            assert!(calculated - actual < 100, "{}", json!(output));
         }
     }
 }

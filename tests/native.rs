@@ -1,15 +1,12 @@
-use dekopon_provider_sdk::{CapabilityId, Provider as _};
-use dekopon_ripgrep_provider::RipgrepProvider;
+mod support;
 use serde_json::{Value, json};
+use support::{failure, invoke};
 
-fn invoke(input: Value) -> Value {
-    RipgrepProvider::invoke(
-        &"ripgrep.search"
-            .parse::<CapabilityId>()
-            .expect("valid capability"),
-        input,
-    )
-    .expect("search succeeds")
+#[test]
+fn typed_native_rejects_unknown_capability_without_echoing_input() {
+    let (status, stderr) = failure("ripgrep.other", json!({"secret": "never echo this"}));
+    assert_eq!(status, 1);
+    assert_eq!(stderr, "the provider has no such capability\n");
 }
 
 fn kinds(output: &Value) -> Vec<&str> {

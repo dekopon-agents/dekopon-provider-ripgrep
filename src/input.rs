@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use serde_json::Value;
 
 use crate::error::{self, SearchError};
@@ -15,7 +17,7 @@ pub(crate) const MAX_CONTEXT_LINES: usize = 8;
 pub(crate) const DEFAULT_MAX_RESULTS: usize = 100;
 pub(crate) const MAX_RESULTS: usize = 1_000;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SearchMode {
     #[default]
@@ -23,7 +25,7 @@ pub(crate) enum SearchMode {
     Fixed,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum CaseMode {
     #[default]
@@ -32,23 +34,23 @@ pub(crate) enum CaseMode {
     Smart,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Document {
     pub(crate) path: String,
     pub(crate) text: String,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Context {
     pub(crate) before: usize,
     pub(crate) after: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SearchInput {
+pub struct SearchInput {
     pub(crate) documents: Vec<Document>,
     pub(crate) pattern: String,
     #[serde(default)]
@@ -74,13 +76,14 @@ const fn default_max_results() -> usize {
 }
 
 impl SearchInput {
+    #[cfg(test)]
     pub(crate) fn parse(value: Value) -> Result<Self, SearchError> {
         let input: Self = serde_json::from_value(value).map_err(|_| error::invalid_input())?;
         input.validate()?;
         Ok(input)
     }
 
-    fn validate(&self) -> Result<(), SearchError> {
+    pub(crate) fn validate(&self) -> Result<(), SearchError> {
         if !(MIN_DOCUMENTS..=MAX_DOCUMENTS).contains(&self.documents.len())
             || self.pattern.is_empty()
             || self.pattern.len() > MAX_PATTERN_BYTES
