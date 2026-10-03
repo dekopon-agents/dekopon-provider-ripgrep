@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.0] - 2026-10-03
+
+- Move to the published provider SDK and testkit 0.31.0, adopting typed streaming stdio for
+  stdin-only search and the `rg` command without ambient filesystem access.
+
 ## [0.5.0] - 2026-09-20
 
 - Move to provider SDK 0.18.0, isolate concurrent test hosts' compilation caches, and update
