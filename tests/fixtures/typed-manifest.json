@@ -1,0 +1,100 @@
+{
+  "apiVersion": "dekopon.dev/provider/v1alpha1",
+  "id": "ripgrep",
+  "description": "Searches only piped stdin with Rust ripgrep matchers; streams matching lines to stdout",
+  "capabilities": [
+    {
+      "id": "ripgrep.search",
+      "description": "Search piped stdin with regex/fixed matching and bounded context; emit selected text lines",
+      "effect": "read-only",
+      "risk": "Low",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Search only piped stdin. No filesystem path or document input is accepted.",
+        "properties": {
+          "case": {
+            "default": "sensitive",
+            "enum": [
+              "sensitive",
+              "insensitive",
+              "smart"
+            ],
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": false,
+            "default": {
+              "after": 0,
+              "before": 0
+            },
+            "description": "Both counts are required when context is supplied; defaults to zero lines on both sides.",
+            "properties": {
+              "after": {
+                "format": "uint",
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "before": {
+                "format": "uint",
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "before",
+              "after"
+            ],
+            "type": "object"
+          },
+          "invert": {
+            "default": false,
+            "type": "boolean"
+          },
+          "line": {
+            "default": false,
+            "type": "boolean"
+          },
+          "max_results": {
+            "default": 100,
+            "description": "Maximum selected lines, not occurrences or context lines.",
+            "format": "uint",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "default": "regex",
+            "enum": [
+              "regex",
+              "fixed"
+            ],
+            "type": "string"
+          },
+          "multiline": {
+            "default": false,
+            "type": "boolean"
+          },
+          "pattern": {
+            "description": "One Rust-regex pattern or fixed literal, 1–4096 UTF-8 bytes. PCRE2 look-around and backreferences are unsupported.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "word": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "commandWords": [
+    "rg"
+  ]
+}

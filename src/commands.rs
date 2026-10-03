@@ -1,52 +1,23 @@
-//! The `rg` command word: ripgrep's command line over the text piped into it.
-//!
-//! An agent's shell has no filesystem, and this component could not open one if it had, so the only
-//! text `rg` can search is the value piped into the word. `PATH` is therefore never opened: it names
-//! that text in the results, and defaults to `<stdin>`, the name ripgrep gives standard input.
-//!
-//! The flags are ripgrep's own spellings for what `ripgrep.search` accepts, and nothing more.
-//! `-g/--glob`, `--max-filesize`, `-e/--regexp`, `-r/--replace`, `--json`, and every other ripgrep
-//! flag are clap usage errors at status 2 naming the flag, not settings silently dropped. `--help`,
-//! `--version`, and usage errors are rendered here and authorize nothing. A well-formed argv becomes
-//! a `ripgrep.search` proposal, authorized exactly as a direct call is.
-//!
-//! The two counts are range-checked against the constants `invoke` enforces, so a model reads the
-//! bound it crossed instead of a static `invalid-input`. Everything else — the pattern length, the
-//! piped text's size, conflicting options — is checked once, in `invoke`.
-
-use dekopon_provider_sdk::clap::builder::RangedU64ValueParser;
-use dekopon_provider_sdk::clap::{self, CommandFactory, FromArgMatches, Parser};
-use dekopon_provider_sdk::{CommandInvocation, CommandRun, ProviderError, cli};
+//! The `rg` command word: ripgrep's command line over piped stdin only.
+use crate::input::{MAX_CONTEXT_LINES, MAX_RESULTS, SearchInput};
+use crate::{RipgrepProvider, Search};
+use clap::Parser;
+use clap::builder::RangedU64ValueParser;
+use dekopon_provider_sdk::provider::{Proposal, Usage};
 use serde_json::{Map, Value, json};
 
-use crate::SEARCH;
-use crate::input::{MAX_CONTEXT_LINES, MAX_RESULTS};
-
-/// The label ripgrep gives standard input, and the one unnamed piped text gets.
-const STDIN_LABEL: &str = "<stdin>";
-
-/// The path ripgrep reads as standard input.
-const PIPED: &str = "-";
-
-// The `rg` tree, declared once and rendered by clap. Plain comments, not doc comments: clap renders
-// a doc comment on the struct as the `about` line above `Usage:`. `args_override_self` is ripgrep's
-// last-flag-wins rule: `-m 1 -m 5` is five, not a usage error.
 #[derive(Parser)]
 #[command(
     name = "rg",
     version,
     about = "Search the text piped into rg with ripgrep's matchers",
-    after_help = "rg searches only the text piped into it, as in `cat notes | rg -i todo`. PATH names \
-                  that text in the JSON results and is never opened.",
+    after_help = "rg searches only the text piped into it, as in `cat notes | rg -i todo`.",
     args_override_self = true
 )]
-struct Rg {
+pub struct Rg {
     /// A Rust regex, or a literal string with -F
     #[arg(value_name = "PATTERN")]
     pattern: String,
-    /// The name the piped text carries in results; never opened [default: <stdin>]
-    #[arg(value_name = "PATH")]
-    path: Option<String>,
     /// Treat the pattern as a literal string instead of a regex
     #[arg(short = 'F', long)]
     fixed_strings: bool,
@@ -84,33 +55,20 @@ struct Rg {
     #[arg(short = 'm', long, value_name = "NUM", value_parser = max_count())]
     max_count: Option<usize>,
 }
-
 fn context_lines() -> RangedU64ValueParser<usize> {
     RangedU64ValueParser::new().range(0..=MAX_CONTEXT_LINES as u64)
 }
-
 fn max_count() -> RangedU64ValueParser<usize> {
     RangedU64ValueParser::new().range(1..=MAX_RESULTS as u64)
 }
 
 impl Rg {
-    /// The `ripgrep.search` input, carrying only the members a flag set so every unset flag keeps
-    /// `invoke`'s own default.
-    fn input(self, text: &str) -> Value {
-        let path = match self.path.as_deref() {
-            None | Some(PIPED) => STDIN_LABEL,
-            Some(path) => path,
-        };
+    fn input(self) -> Value {
         let mut input = Map::new();
-        input.insert(
-            "documents".to_owned(),
-            json!([{"path": path, "text": text}]),
-        );
         input.insert("pattern".to_owned(), Value::String(self.pattern));
         if self.fixed_strings {
             input.insert("mode".to_owned(), json!("fixed"));
         }
-        // The three case flags override one another, so at most one is still set.
         let case = if self.ignore_case {
             Some("insensitive")
         } else if self.smart_case {
@@ -133,7 +91,6 @@ impl Rg {
                 input.insert(member.to_owned(), json!(true));
             }
         }
-        // ripgrep's rule: `-C` sets both sides, and `-A`/`-B` override their side in any order.
         if self.before_context.is_some() || self.after_context.is_some() || self.context.is_some() {
             input.insert(
                 "context".to_owned(),
@@ -149,53 +106,30 @@ impl Rg {
         Value::Object(input)
     }
 }
-
-/// Runs one `rg` argv.
-pub(crate) fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-    cli::run_command(Rg::command(), argv, stdin, dispatch)
-}
-
-/// Turns clap's matches into the `ripgrep.search` proposal.
-///
-/// Runs only after clap accepted the argv, so what is left to decide is what clap cannot know:
-/// whether anything was piped.
-fn dispatch(
-    matches: clap::ArgMatches,
-    stdin: Option<&str>,
-) -> Result<CommandInvocation, ProviderError> {
-    let rg = Rg::from_arg_matches(&matches)
-        .map_err(|error| ProviderError::new("usage", error.to_string()))?;
-    let Some(text) = stdin else {
-        return Err(ProviderError::new(
-            "usage",
+pub(crate) fn propose(rg: Rg, stdin_piped: bool) -> Result<Proposal<RipgrepProvider>, Usage> {
+    if !stdin_piped {
+        return Err(Usage::new(
             "rg: nothing was piped in; rg searches only the text piped into it",
         ));
-    };
-    Ok(CommandInvocation {
-        capability: SEARCH.parse().expect("static capability ID"),
-        input: rg.input(text),
-        secret_use: None,
-    })
+    }
+    let input: SearchInput =
+        serde_json::from_value(rg.input()).expect("clap-checked input is typed");
+    Ok(Proposal::to::<Search>(input))
 }
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::{CommandInvocation, CommandRun, Provider};
+    use super::RipgrepProvider;
+    use dekopon_provider_sdk::{CommandRunOutcome, provider};
     use serde_json::{Value, json};
-
-    use super::run;
-    use crate::{RipgrepProvider, SEARCH};
-
-    const TEXT: &str = "alpha\nbeta\nALPHA\n";
 
     const HELP: &str = "\
 Search the text piped into rg with ripgrep's matchers
 
-Usage: rg [OPTIONS] <PATTERN> [PATH]
+Usage: rg [OPTIONS] <PATTERN>
 
 Arguments:
   <PATTERN>  A Rust regex, or a literal string with -F
-  [PATH]     The name the piped text carries in results; never opened [default: <stdin>]
 
 Options:
   -F, --fixed-strings         Treat the pattern as a literal string instead of a regex
@@ -213,264 +147,234 @@ Options:
   -h, --help                  Print help
   -V, --version               Print version
 
-rg searches only the text piped into it, as in `cat notes | rg -i todo`. PATH names that text in the JSON results and is never opened.
+rg searches only the text piped into it, as in `cat notes | rg -i todo`.
 ";
-
-    fn argv(words: &[&str]) -> Vec<String> {
-        words.iter().map(|word| (*word).to_owned()).collect()
+    fn command(words: &[&str], piped: bool) -> CommandRunOutcome {
+        provider::command::<RipgrepProvider>(
+            &words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+            piped,
+        )
     }
-
-    fn rendered(words: &[&str], stdin: Option<&str>) -> (String, String, u8) {
-        let run = run(&argv(words), stdin).expect("clap answers are rendered, not declined");
-        let CommandRun::Rendered {
-            stdout,
-            stderr,
-            status,
-        } = run
+    fn proposal(words: &[&str]) -> Value {
+        let CommandRunOutcome::Proposed {
+            capability,
+            input,
+            secret_use,
+        } = command(words, true)
         else {
-            panic!("expected rendered text for {words:?}, got {run:?}");
+            panic!("{words:?}: expected proposal")
         };
-        (stdout, stderr, status)
+        assert_eq!(capability.as_str(), "ripgrep.search");
+        assert!(secret_use.is_none());
+        input
     }
-
-    fn proposal(words: &[&str], stdin: Option<&str>) -> CommandInvocation {
-        match run(&argv(words), stdin).expect("a well-formed argv proposes") {
-            CommandRun::Proposal(invocation) => invocation,
-            other => panic!("expected a proposal for {words:?}, got {other:?}"),
-        }
-    }
-
-    /// The input `rg alpha` proposes over [`TEXT`], with `members` merged in.
     fn search(members: Value) -> Value {
-        let mut input = json!({
-            "documents": [{"path": "<stdin>", "text": TEXT}],
-            "pattern": "alpha"
-        });
-        input
+        let mut expected = json!({"pattern":"alpha","mode":"regex","case":"sensitive",
+            "word":false,"line":false,"multiline":false,"invert":false,
+            "context":{"before":0,"after":0},"max_results":100});
+        expected
             .as_object_mut()
-            .expect("input object")
-            .extend(members.as_object().expect("member object").clone());
-        input
+            .unwrap()
+            .extend(members.as_object().unwrap().clone());
+        expected
     }
-
     #[test]
     fn help_is_byte_pinned_on_stdout_at_status_zero() {
         for flag in ["--help", "-h"] {
-            let (stdout, stderr, status) = rendered(&[flag], None);
-            assert_eq!(stdout, HELP, "{flag}");
-            assert_eq!(stderr, "", "{flag}");
-            assert_eq!(status, 0, "{flag}");
+            let CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } = command(&[flag], false)
+            else {
+                panic!("help")
+            };
+            assert_eq!(
+                (status, stderr.as_str(), stdout.as_str()),
+                (0, "", HELP),
+                "{flag}"
+            );
         }
     }
-
     #[test]
     fn version_is_the_crate_version_on_stdout_at_status_zero() {
         for flag in ["--version", "-V"] {
-            let (stdout, stderr, status) = rendered(&[flag], None);
-            assert_eq!(stdout, concat!("rg ", env!("CARGO_PKG_VERSION"), "\n"));
-            assert_eq!(stderr, "", "{flag}");
-            assert_eq!(status, 0, "{flag}");
+            let CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } = command(&[flag], false)
+            else {
+                panic!("version")
+            };
+            assert_eq!(
+                (status, stderr.as_str(), stdout.as_str()),
+                (0, "", concat!("rg ", env!("CARGO_PKG_VERSION"), "\n"))
+            );
         }
     }
-
     #[test]
-    fn a_missing_pattern_is_a_usage_error_at_status_two() {
-        let (stdout, stderr, status) = rendered(&[], Some(TEXT));
+    fn missing_pattern_is_exact_usage_two() {
+        let CommandRunOutcome::Rendered {
+            stdout,
+            stderr,
+            status,
+        } = command(&[], true)
+        else {
+            panic!("usage")
+        };
         assert_eq!(status, 2);
         assert_eq!(stdout, "");
         assert_eq!(
             stderr,
             "error: the following required arguments were not provided:\n  <PATTERN>\n\n\
-             Usage: rg <PATTERN> [PATH]\n\nFor more information, try '--help'.\n"
+             Usage: rg <PATTERN>\n\nFor more information, try '--help'.\n"
         );
     }
-
-    /// Every ripgrep flag without a backing `ripgrep.search` member is refused by name, and so is a
-    /// count outside the bound `invoke` enforces.
     #[test]
-    fn unsupported_flags_and_out_of_range_counts_are_usage_errors_at_status_two() {
+    fn unsupported_flags_paths_and_out_of_range_counts_are_usage_two() {
         for (words, named) in [
             (&["-g", "*.rs", "alpha"][..], "-g"),
-            (&["--glob", "*.rs", "alpha"][..], "--glob"),
-            (&["--max-filesize", "1M", "alpha"][..], "--max-filesize"),
-            (&["-e", "alpha"][..], "-e"),
-            (&["--json", "alpha"][..], "--json"),
-            (&["-r", "omega", "alpha"][..], "-r"),
-            (&["-foo"][..], "-f"),
-            (&["-C", "many", "alpha"][..], "many"),
-            (&["-C", "9", "alpha"][..], "9"),
-            (&["-A", "-1", "alpha"][..], "-1"),
-            (&["-m", "0", "alpha"][..], "0"),
-            (&["-m", "1001", "alpha"][..], "1001"),
-            (&["alpha", "one", "two"][..], "two"),
+            (&["--glob", "*.rs", "alpha"], "--glob"),
+            (&["--max-filesize", "1M", "alpha"], "--max-filesize"),
+            (&["-e", "alpha"], "-e"),
+            (&["--json", "alpha"], "--json"),
+            (&["-r", "omega", "alpha"], "-r"),
+            (&["-foo"], "-f"),
+            (&["-C", "many", "alpha"], "many"),
+            (&["-C", "9", "alpha"], "9"),
+            (&["-A", "-1", "alpha"], "-1"),
+            (&["-m", "0", "alpha"], "0"),
+            (&["-m", "1001", "alpha"], "1001"),
+            (&["alpha", "one"], "one"),
         ] {
-            let (stdout, stderr, status) = rendered(words, Some(TEXT));
+            let CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } = command(words, true)
+            else {
+                panic!("{words:?}")
+            };
             assert_eq!(status, 2, "{words:?}");
-            assert_eq!(stdout, "", "{words:?}");
-            assert!(stderr.starts_with("error: "), "{words:?}: {stderr}");
-            assert!(stderr.contains(named), "{words:?}: {stderr}");
+            assert_eq!(stdout, "");
             assert!(
-                stderr.ends_with("\nFor more information, try '--help'.\n"),
+                stderr.starts_with("error: ") && stderr.contains(named),
                 "{words:?}: {stderr}"
             );
-            assert!(!stderr.contains('\u{1b}'), "{words:?}: {stderr:?}");
+            assert!(stderr.ends_with("\nFor more information, try '--help'.\n"));
+            assert!(!stderr.contains('\u{1b}'));
         }
     }
-
     #[test]
-    fn each_flag_sets_exactly_its_input_member() {
+    fn every_supported_flag_and_override_sets_exact_proposal_members() {
         for (words, members) in [
             (&["alpha"][..], json!({})),
-            (&["-F", "alpha"][..], json!({"mode": "fixed"})),
-            (&["--fixed-strings", "alpha"][..], json!({"mode": "fixed"})),
-            (&["-i", "alpha"][..], json!({"case": "insensitive"})),
+            (&["-F", "alpha"], json!({"mode":"fixed"})),
+            (&["--fixed-strings", "alpha"], json!({"mode":"fixed"})),
+            (&["-i", "alpha"], json!({"case":"insensitive"})),
+            (&["--ignore-case", "alpha"], json!({"case":"insensitive"})),
+            (&["-S", "alpha"], json!({"case":"smart"})),
+            (&["--smart-case", "alpha"], json!({"case":"smart"})),
+            (&["-s", "alpha"], json!({"case":"sensitive"})),
+            (&["--case-sensitive", "alpha"], json!({"case":"sensitive"})),
+            (&["-i", "-s", "alpha"], json!({"case":"sensitive"})),
+            (&["-s", "-S", "alpha"], json!({"case":"smart"})),
+            (&["-w", "alpha"], json!({"word":true})),
+            (&["--word-regexp", "alpha"], json!({"word":true})),
+            (&["-x", "alpha"], json!({"line":true})),
+            (&["--line-regexp", "alpha"], json!({"line":true})),
+            (&["-U", "alpha"], json!({"multiline":true})),
+            (&["--multiline", "alpha"], json!({"multiline":true})),
+            (&["-v", "alpha"], json!({"invert":true})),
+            (&["--invert-match", "alpha"], json!({"invert":true})),
             (
-                &["--ignore-case", "alpha"][..],
-                json!({"case": "insensitive"}),
-            ),
-            (&["-S", "alpha"][..], json!({"case": "smart"})),
-            (&["--smart-case", "alpha"][..], json!({"case": "smart"})),
-            (&["-s", "alpha"][..], json!({"case": "sensitive"})),
-            (
-                &["--case-sensitive", "alpha"][..],
-                json!({"case": "sensitive"}),
-            ),
-            (&["-i", "-s", "alpha"][..], json!({"case": "sensitive"})),
-            (&["-s", "-S", "alpha"][..], json!({"case": "smart"})),
-            (&["-w", "alpha"][..], json!({"word": true})),
-            (&["--word-regexp", "alpha"][..], json!({"word": true})),
-            (&["-x", "alpha"][..], json!({"line": true})),
-            (&["--line-regexp", "alpha"][..], json!({"line": true})),
-            (&["-U", "alpha"][..], json!({"multiline": true})),
-            (&["--multiline", "alpha"][..], json!({"multiline": true})),
-            (&["-v", "alpha"][..], json!({"invert": true})),
-            (&["--invert-match", "alpha"][..], json!({"invert": true})),
-            (
-                &["-A", "2", "alpha"][..],
-                json!({"context": {"before": 0, "after": 2}}),
+                &["-A", "2", "alpha"],
+                json!({"context":{"before":0,"after":2}}),
             ),
             (
-                &["--after-context=2", "alpha"][..],
-                json!({"context": {"before": 0, "after": 2}}),
+                &["--after-context=2", "alpha"],
+                json!({"context":{"before":0,"after":2}}),
             ),
             (
-                &["-B", "3", "alpha"][..],
-                json!({"context": {"before": 3, "after": 0}}),
+                &["-B", "3", "alpha"],
+                json!({"context":{"before":3,"after":0}}),
             ),
             (
-                &["--before-context", "3", "alpha"][..],
-                json!({"context": {"before": 3, "after": 0}}),
+                &["--before-context", "3", "alpha"],
+                json!({"context":{"before":3,"after":0}}),
             ),
             (
-                &["-C", "8", "alpha"][..],
-                json!({"context": {"before": 8, "after": 8}}),
+                &["-C", "8", "alpha"],
+                json!({"context":{"before":8,"after":8}}),
             ),
             (
-                &["--context", "0", "alpha"][..],
-                json!({"context": {"before": 0, "after": 0}}),
+                &["--context", "0", "alpha"],
+                json!({"context":{"before":0,"after":0}}),
             ),
             (
-                &["-C", "4", "-A", "1", "alpha"][..],
-                json!({"context": {"before": 4, "after": 1}}),
+                &["-C", "4", "-A", "1", "alpha"],
+                json!({"context":{"before":4,"after":1}}),
             ),
             (
-                &["-B", "1", "-C", "4", "alpha"][..],
-                json!({"context": {"before": 1, "after": 4}}),
+                &["-B", "1", "-C", "4", "alpha"],
+                json!({"context":{"before":1,"after":4}}),
             ),
-            (&["-m", "7", "alpha"][..], json!({"max_results": 7})),
+            (&["-m", "7", "alpha"], json!({"max_results":7})),
             (
-                &["--max-count", "1000", "alpha"][..],
-                json!({"max_results": 1000}),
+                &["--max-count", "1000", "alpha"],
+                json!({"max_results":1000}),
             ),
-            (
-                &["-m", "1", "-m", "5", "alpha"][..],
-                json!({"max_results": 5}),
-            ),
-            (
-                &["alpha", "-iw"][..],
-                json!({"case": "insensitive", "word": true}),
-            ),
+            (&["-m", "1", "-m", "5", "alpha"], json!({"max_results":5})),
+            (&["alpha", "-iw"], json!({"case":"insensitive","word":true})),
         ] {
-            let invocation = proposal(words, Some(TEXT));
-            assert_eq!(invocation.capability.as_str(), SEARCH, "{words:?}");
-            assert_eq!(invocation.input, search(members), "{words:?}");
+            assert_eq!(proposal(words), search(members), "{words:?}");
         }
+        assert_eq!(proposal(&["--", "-foo"]), search(json!({"pattern":"-foo"})));
     }
-
     #[test]
-    fn path_names_the_piped_text_and_dash_is_stdin() {
-        let invocation = proposal(&["alpha", "notes/todo.md"], Some(TEXT));
+    fn nothing_piped_is_a_decline_and_target_is_declared() {
+        let CommandRunOutcome::Failed { error } = command(&["alpha"], false) else {
+            panic!("missing pipe")
+        };
+        assert_eq!(error.code, "usage");
+        assert!(error.message.contains("nothing was piped in"));
         assert_eq!(
-            invocation.input["documents"],
-            json!([{"path": "notes/todo.md", "text": TEXT}])
-        );
-        let invocation = proposal(&["alpha", "-"], Some(TEXT));
-        assert_eq!(invocation.input, search(json!({})));
-    }
-
-    #[test]
-    fn double_dash_ends_the_options() {
-        let invocation = proposal(&["--", "-foo"], Some(TEXT));
-        assert_eq!(invocation.input["pattern"], "-foo");
-        assert_eq!(invocation.input["documents"][0]["path"], "<stdin>");
-
-        let invocation = proposal(&["-i", "--", "-v", "--label"], Some(TEXT));
-        assert_eq!(
-            invocation.input,
-            json!({
-                "documents": [{"path": "--label", "text": TEXT}],
-                "pattern": "-v",
-                "case": "insensitive"
-            })
+            provider::manifest::<RipgrepProvider>()
+                .unwrap()
+                .capabilities[0]
+                .id
+                .as_str(),
+            "ripgrep.search"
         );
     }
-
     #[test]
-    fn nothing_piped_is_a_decline() {
-        let error = run(&argv(&["alpha"]), None).expect_err("a decline, reported as a usage error");
-        assert_eq!(error.code(), "usage");
-        assert_eq!(
-            error.message(),
-            "rg: nothing was piped in; rg searches only the text piped into it"
-        );
-
-        let invocation = proposal(&["alpha"], Some(""));
-        assert_eq!(invocation.input["documents"][0]["text"], "");
-    }
-
-    /// Every capability the word can propose is one the manifest declares. Without this, a renamed
-    /// capability would be discovered by a model at runtime as an authorization denial.
-    #[test]
-    fn every_dispatch_target_is_declared_in_the_manifest() {
-        let declared: Vec<String> = RipgrepProvider::manifest()
-            .capabilities
-            .iter()
-            .map(|capability| capability.id.to_string())
-            .collect();
-        let invocation = proposal(&["alpha"], Some(TEXT));
-        assert!(
-            declared.contains(&invocation.capability.to_string()),
-            "rg proposes {} which the manifest does not declare",
-            invocation.capability
-        );
-    }
-
-    /// A proposal is only useful if the closed schema accepts it: every flag's member, at its
-    /// boundary, is a search `invoke` runs.
-    #[test]
-    fn every_proposal_is_a_search_invoke_accepts() {
-        for (words, selected) in [
-            (&["alpha"][..], 1),
-            (&["-F", "-i", "-w", "-C", "8", "-m", "1000", "ALPHA"][..], 2),
-            // A lowercase pattern under smart case matches `ALPHA` too.
-            (&["-S", "-x", "-A", "0", "-B", "8", "alpha"][..], 2),
-            (&["-s", "-U", "-m", "1", "alpha\nbeta"][..], 1),
-            (&["-v", "alpha", "notes/todo.md"][..], 2),
+    fn proposals_are_accepted_by_native_stdin_search() {
+        use dekopon_provider_sdk_testkit::Native;
+        for (words, text, expected) in [
+            (&["alpha"][..], "alpha\nbeta\nALPHA\n", "alpha\n"),
+            (
+                &["-F", "-i", "-w", "-C", "8", "-m", "1000", "ALPHA"],
+                "alpha\nbeta\nALPHA\n",
+                "alpha\nbeta\nALPHA\n",
+            ),
+            (
+                &["-S", "-x", "-A", "0", "-B", "8", "alpha"],
+                "alpha\nbeta\nALPHA\n",
+                "alpha\nbeta\nALPHA\n",
+            ),
+            (
+                &["-s", "-U", "-m", "1", "alpha\\nbeta"],
+                "alpha\nbeta\n",
+                "alpha\nbeta\n",
+            ),
+            (&["-v", "alpha"], "alpha\nbeta\nALPHA\n", "beta\nALPHA\n"),
         ] {
-            let invocation = proposal(words, Some(TEXT));
-            let output = RipgrepProvider::invoke(&invocation.capability, invocation.input)
-                .unwrap_or_else(|error| panic!("{words:?}: {}", error.message()));
-            assert_eq!(output["selected_count"], selected, "{words:?}: {output}");
+            let output = Native::<RipgrepProvider>::new()
+                .stdin(text.as_bytes().to_vec())
+                .call("ripgrep.search", &proposal(words).to_string());
+            assert_eq!(output.status, 0, "{words:?}: {}", output.stderr);
+            assert_eq!(output.stdout, expected.as_bytes(), "{words:?}");
         }
     }
 }
