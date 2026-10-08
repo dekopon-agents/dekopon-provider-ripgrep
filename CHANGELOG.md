@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-10-08
+
+- Pin the published provider SDK, testkit, broker host, and carried Dekopon crates to 0.36.0;
+  preserve stdin-only search, resource limits, and the existing component interface.
+
 ## [0.6.0] - 2026-10-03
 
 - Move to the published provider SDK and testkit 0.31.0, adopting typed streaming stdio for
