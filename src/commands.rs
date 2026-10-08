@@ -225,11 +225,15 @@ rg searches only the text piped into it, as in `cat notes | rg -i todo`.
         };
         assert_eq!(status, 2);
         assert_eq!(stdout, "");
-        assert_eq!(
-            stderr,
+        assert!(stderr.starts_with(
             "error: the following required arguments were not provided:\n  <PATTERN>\n\n\
-             Usage: rg <PATTERN>\n\nFor more information, try '--help'.\n"
-        );
+             Usage: rg <PATTERN>\n\nFor more information, try '--help'.\n\n"
+        ));
+        assert!(stderr.contains("Usage: rg [OPTIONS] <PATTERN>"));
+        assert!(stderr.contains("-m, --max-count <NUM>"));
+        assert!(stderr.ends_with(
+            "rg searches only the text piped into it, as in `cat notes | rg -i todo`.\n"
+        ));
     }
     #[test]
     fn unsupported_flags_paths_and_out_of_range_counts_are_usage_two() {
@@ -262,7 +266,17 @@ rg searches only the text piped into it, as in `cat notes | rg -i todo`.
                 stderr.starts_with("error: ") && stderr.contains(named),
                 "{words:?}: {stderr}"
             );
-            assert!(stderr.ends_with("\nFor more information, try '--help'.\n"));
+            assert!(stderr.contains("\nFor more information, try '--help'.\n"));
+            assert!(
+                stderr.contains("Usage: rg [OPTIONS] <PATTERN>"),
+                "{words:?}: {stderr}"
+            );
+            assert!(
+                stderr.ends_with(
+                    "rg searches only the text piped into it, as in `cat notes | rg -i todo`.\n"
+                ),
+                "{words:?}: {stderr}"
+            );
             assert!(!stderr.contains('\u{1b}'));
         }
     }
